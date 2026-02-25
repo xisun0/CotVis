@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "realtime-asr"
+version = "0.1.0"
+description = "MVP macOS streaming ASR with context-managed top terms output"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "pyobjc-core>=10.0; platform_system == 'Darwin'",
+  "pyobjc-framework-Speech>=10.0; platform_system == 'Darwin'",
+  "pyobjc-framework-AVFoundation>=10.0; platform_system == 'Darwin'"
+]
+
+[project.scripts]
+realtime-asr = "realtime_asr.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
