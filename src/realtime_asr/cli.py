@@ -2,12 +2,19 @@ from __future__ import annotations
 
 import argparse
 import json
+import platform
 import sys
 import time
 
 from realtime_asr.asr_backend import MacSpeechBackend
+from realtime_asr.asr_backend.mac_speech import MacSpeechBackendError
 from realtime_asr.context.manager import ContextManager
 from realtime_asr.events import TranscriptEvent
+
+try:
+    import CoreFoundation
+except Exception:  # pragma: no cover
+    CoreFoundation = None
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -40,9 +47,12 @@ def main() -> int:
         top_k=args.top_k,
     )
 
-    backend = MacSpeechBackend(lang=args.lang)
+    backend = MacSpeechBackend(lang=args.lang, verbose=args.verbose)
+    last_event_ts = time.time()
 
     def on_event(event: TranscriptEvent) -> None:
+        nonlocal last_event_ts
+        last_event_ts = event.ts
         manager.on_event(event)
         if args.print_transcript:
             tag = "FINAL" if event.is_final else "PARTIAL"
@@ -50,13 +60,29 @@ def main() -> int:
 
     try:
         backend.start(on_event)
-    except NotImplementedError as exc:
-        print(f"Backend not ready: {exc}", file=sys.stderr)
+    except MacSpeechBackendError as exc:
+        print(f"Failed to start backend: {exc}", file=sys.stderr)
         return 1
+    if args.verbose:
+        print("[CLI] Backend started. Waiting for speech...")
 
     try:
         while True:
-            time.sleep(args.update_interval)
+            _wait_interval(args.update_interval)
+            if not backend.is_running():
+                err = backend.get_last_error()
+                if err:
+                    print(f"Backend stopped: {err}", file=sys.stderr)
+                else:
+                    print("Backend stopped.", file=sys.stderr)
+                return 1
+            if args.verbose and (time.time() - last_event_ts) > 10.0:
+                stats = backend.get_debug_stats()
+                print(
+                    "[CLI] No transcript in 10s. "
+                    f"audio_buffers={int(stats['audio_buffer_count'])}, "
+                    f"recognizer_callbacks={int(stats['result_callback_count'])}"
+                )
             top_terms = manager.compute_top_terms()
             if args.jsonl:
                 print(
@@ -76,6 +102,25 @@ def main() -> int:
         backend.stop()
 
     return 0
+
+
+def _wait_interval(seconds: float) -> None:
+    if seconds <= 0:
+        return
+    if platform.system() != "Darwin" or CoreFoundation is None:
+        time.sleep(seconds)
+        return
+
+    deadline = time.monotonic() + seconds
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return
+        CoreFoundation.CFRunLoopRunInMode(
+            CoreFoundation.kCFRunLoopDefaultMode,
+            min(remaining, 0.2),
+            False,
+        )
 
 
 if __name__ == "__main__":
