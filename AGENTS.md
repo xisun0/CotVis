@@ -1,10 +1,23 @@
 # AGENTS.md
 
 ## Purpose
-Guidelines for human/agent contributors working in this repository.
+This file explains how contributors should work in this repo.
+It is written for beginners and focuses on practical rules.
+
+## Start Here (Beginner Flow)
+1. Read `README.md` to understand what the app does and how to run it.
+2. Pick one small task from the current GitHub issue.
+3. Make small, focused code changes.
+4. Run a quick check (at minimum: code compiles, CLI starts).
+5. Commit with a clear message.
+6. Link the commit to the issue with `Refs #<issue_number>`.
 
 ## Commit Convention
-Use Conventional Commits:
+Use this format:
+
+`<type>(<scope>): <short summary>`
+
+Types:
 
 - `feat`: new user-facing capability
 - `fix`: bug fix
@@ -13,7 +26,7 @@ Use Conventional Commits:
 - `chore`: maintenance tasks
 - `test`: tests added/updated
 
-Recommended scopes for this project:
+Scopes used in this project:
 
 - `build`: packaging/dependencies/tooling setup
 - `cli`: command entrypoint, flags, terminal output behavior
@@ -23,10 +36,6 @@ Recommended scopes for this project:
 - `infra`: local workflow files (e.g., Makefile)
 - `scaffold`: initial project structure/bootstrap
 
-Commit format:
-
-`<type>(<scope>): <short summary>`
-
 Examples:
 
 - `feat(asr): stream partial and final transcripts from macOS Speech`
@@ -34,7 +43,16 @@ Examples:
 - `fix(context): prevent duplicate counting when final arrives`
 - `docs(docs): add microphone permission troubleshooting`
 
+For partial progress on an issue, add this line in commit body:
+
+`Refs #1`
+
 ## Repo Boundaries
 - Keep `README.md` user-facing (setup/run/usage).
-- Keep implementation details and contributor policy here in `AGENTS.md`.
+- Keep contributor policy in `AGENTS.md`.
 - Do not introduce cloud ASR dependencies in MVP.
+
+## Keep Changes Small
+- One commit should do one clear thing.
+- Avoid mixing refactor + new feature in one commit.
+- If unsure, choose simpler implementation first and leave a TODO.

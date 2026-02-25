@@ -1,0 +1,21 @@
+# Title (required):
+# <type>(<scope>): <short summary in plain words>
+#
+# Good title examples:
+# feat(asr): add microphone transcription callback
+# feat(cli): print top terms every 2 seconds
+# fix(context): prevent duplicate final-term counting
+# docs(docs): explain permission setup on macOS
+
+# Why this change?
+# -
+
+# What changed?
+# -
+# -
+
+# How to check it works?
+# -
+
+# Link to issue (for partial progress):
+# Refs #1
