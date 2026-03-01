@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CotVis Live Word Cloud</title>
+    <style>
+      :root {
+        --ink: #102a43;
+        --paper: #f8f4ea;
+        --line: #d7c9a9;
+        --accent: #bc4749;
+        --accent-soft: #ddb892;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        color: var(--ink);
+        font-family: "Baskerville", "Palatino Linotype", serif;
+        background:
+          radial-gradient(circle at 20% 20%, #fff3 0 10%, transparent 11%),
+          radial-gradient(circle at 80% 70%, #00000008 0 12%, transparent 13%),
+          linear-gradient(120deg, #fdfbf5, var(--paper));
+      }
+      .frame {
+        max-width: 1100px;
+        margin: 24px auto;
+        padding: 20px;
+        border: 2px solid var(--line);
+        background: #fffaf0cc;
+        box-shadow: 0 18px 50px #00000012;
+      }
+      .head {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        border-bottom: 2px dashed var(--line);
+        padding-bottom: 10px;
+      }
+      .title {
+        margin: 0;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        font-size: clamp(1.3rem, 2.6vw, 2rem);
+      }
+      .status {
+        font-family: "Avenir Next", "Trebuchet MS", sans-serif;
+        font-size: 0.86rem;
+        opacity: 0.85;
+      }
+      .cloud {
+        min-height: 68vh;
+        padding: 22px 8px 8px;
+        display: flex;
+        flex-wrap: wrap;
+        align-content: flex-start;
+        gap: 12px 14px;
+      }
+      .term {
+        line-height: 1;
+        padding: 4px 6px;
+        border-bottom: 1px solid #00000022;
+        transform-origin: center;
+        animation: rise 240ms ease-out both;
+      }
+      .term:nth-child(3n) {
+        color: var(--accent);
+      }
+      .term:nth-child(5n) {
+        color: #7f5539;
+      }
+      .term:nth-child(7n) {
+        color: #3a5a40;
+      }
+      .empty {
+        font-size: 1.05rem;
+        opacity: 0.72;
+      }
+      @keyframes rise {
+        from {
+          opacity: 0;
+          transform: translateY(7px) scale(0.97);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+      }
+      @media (max-width: 700px) {
+        .frame {
+          margin: 10px;
+          padding: 14px;
+        }
+        .cloud {
+          min-height: 70vh;
+          gap: 10px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="frame">
+      <header class="head">
+        <h1 class="title">CotVis Live Terms</h1>
+        <div class="status" id="status">Waiting for stream...</div>
+      </header>
+      <section class="cloud" id="cloud"></section>
+    </main>
+
+    <script>
+      const cloud = document.getElementById("cloud");
+      const status = document.getElementById("status");
+
+      function fontSize(weight, minW, maxW) {
+        if (maxW <= minW) return 24;
+        const t = (weight - minW) / (maxW - minW);
+        return Math.round(18 + t * 54);
+      }
+
+      function renderTerms(payload) {
+        const terms = Array.isArray(payload.terms) ? payload.terms : [];
+        cloud.innerHTML = "";
+
+        if (terms.length === 0) {
+          const e = document.createElement("p");
+          e.className = "empty";
+          e.textContent = "Listening... speak into your microphone.";
+          cloud.appendChild(e);
+          return;
+        }
+
+        const weights = terms.map((x) => Number(x[1]) || 0);
+        const minW = Math.min(...weights);
+        const maxW = Math.max(...weights);
+
+        for (const [term, rawWeight] of terms) {
+          const w = Number(rawWeight) || 0;
+          const span = document.createElement("span");
+          span.className = "term";
+          span.textContent = term;
+          span.style.fontSize = `${fontSize(w, minW, maxW)}px`;
+          span.style.opacity = String(0.62 + (maxW === minW ? 0.35 : (w - minW) / (maxW - minW) * 0.35));
+          cloud.appendChild(span);
+        }
+      }
+
+      async function refresh() {
+        try {
+          const res = await fetch(`/terms?t=${Date.now()}`, { cache: "no-store" });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const data = await res.json();
+          renderTerms(data);
+          const ts = data.ts ? new Date(data.ts * 1000).toLocaleTimeString() : "--";
+          status.textContent = `Updated ${ts} · window ${data.window_sec ?? "?"}s · top ${data.top_k ?? "?"}`;
+        } catch (err) {
+          status.textContent = `Waiting for server... (${err})`;
+        }
+      }
+
+      refresh();
+      setInterval(refresh, 2000);
+    </script>
+  </body>
+</html>

@@ -1,7 +1,7 @@
 PYTHON ?= python3
 ARGS ?=
 
-.PHONY: setup run setup-local commit-help
+.PHONY: setup run run-web sample-wav setup-local commit-help
 
 setup:
 	$(PYTHON) -m pip install --upgrade pip
@@ -9,6 +9,16 @@ setup:
 
 run:
 	$(PYTHON) -m realtime_asr.cli $(ARGS)
+
+run-web:
+	$(PYTHON) -m realtime_asr.cli --serve-ui $(ARGS)
+
+sample-wav:
+	mkdir -p examples
+	say -v Samantha -f examples/sample_script.txt -o examples/sample.aiff
+	afconvert -f WAVE -d LEI16@16000 -c 1 examples/sample.aiff examples/sample.wav
+	rm -f examples/sample.aiff
+	@echo "Generated examples/sample.wav"
 
 setup-local:
 	git config commit.template .gitmessage.txt

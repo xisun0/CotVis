@@ -5,11 +5,13 @@ import json
 import platform
 import sys
 import time
+import webbrowser
 
 from realtime_asr.asr_backend import MacSpeechBackend
 from realtime_asr.asr_backend.mac_speech import MacSpeechBackendError
 from realtime_asr.context.manager import ContextManager
 from realtime_asr.events import TranscriptEvent
+from realtime_asr.web import TopTermsWebServer
 
 try:
     import CoreFoundation
@@ -35,6 +37,10 @@ def build_parser() -> argparse.ArgumentParser:
         default=True,
     )
     parser.add_argument("--verbose", action="store_true")
+    parser.add_argument("--serve-ui", action="store_true")
+    parser.add_argument("--open-browser", action="store_true")
+    parser.add_argument("--ui-host", default="127.0.0.1")
+    parser.add_argument("--ui-port", type=int, default=8765)
     return parser
 
 
@@ -48,6 +54,21 @@ def main() -> int:
     )
 
     backend = MacSpeechBackend(lang=args.lang, verbose=args.verbose)
+    web_server: TopTermsWebServer | None = None
+
+    if args.serve_ui:
+        web_server = TopTermsWebServer(host=args.ui_host, port=args.ui_port)
+        try:
+            web_server.start()
+        except OSError as exc:
+            print(
+                f"Failed to start web UI server on {args.ui_host}:{args.ui_port}: {exc}",
+                file=sys.stderr,
+            )
+            return 1
+        print(f"[CLI] Word cloud UI: {web_server.url()}")
+        if args.open_browser:
+            webbrowser.open(web_server.url(), new=1, autoraise=True)
     last_event_ts = time.time()
 
     def on_event(event: TranscriptEvent) -> None:
@@ -84,22 +105,22 @@ def main() -> int:
                     f"recognizer_callbacks={int(stats['result_callback_count'])}"
                 )
             top_terms = manager.compute_top_terms()
+            payload = {
+                "ts": top_terms.ts,
+                "window_sec": top_terms.window_sec,
+                "top_k": top_terms.top_k,
+                "terms": top_terms.terms,
+            }
+            if web_server is not None:
+                web_server.update(payload)
             if args.jsonl:
-                print(
-                    json.dumps(
-                        {
-                            "ts": top_terms.ts,
-                            "window_sec": top_terms.window_sec,
-                            "top_k": top_terms.top_k,
-                            "terms": top_terms.terms,
-                        },
-                        ensure_ascii=False,
-                    )
-                )
+                print(json.dumps(payload, ensure_ascii=False))
     except KeyboardInterrupt:
         pass
     finally:
         backend.stop()
+        if web_server is not None:
+            web_server.stop()
 
     return 0
 

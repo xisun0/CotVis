@@ -19,6 +19,10 @@ realtime-asr = "realtime_asr.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
+include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+realtime_asr = ["web/static/*.html"]

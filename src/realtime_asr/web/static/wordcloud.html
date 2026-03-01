@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CotVis Signal Cloud</title>
+    <style>
+      :root {
+        --ink: #14213d;
+        --bg-a: #f7f1df;
+        --bg-b: #e8ddbf;
+        --card: #fffcf3d9;
+        --line: #d4c39a;
+        --muted: #5b6480;
+        --live: #2f7a4b;
+        --warn: #c24646;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        color: var(--ink);
+        min-height: 100vh;
+        background:
+          radial-gradient(1200px 500px at 8% -10%, #fff8 0 48%, transparent 60%),
+          radial-gradient(600px 400px at 95% 20%, #00000008 0 35%, transparent 60%),
+          linear-gradient(140deg, var(--bg-a), var(--bg-b));
+        font-family: "Baskerville", "Palatino", serif;
+      }
+      .shell {
+        max-width: 1240px;
+        margin: 18px auto;
+        padding: 14px;
+        display: grid;
+        gap: 14px;
+        grid-template-columns: minmax(0, 2.3fr) minmax(280px, 1fr);
+      }
+      .card {
+        border: 1px solid var(--line);
+        background: var(--card);
+        box-shadow: 0 14px 38px #00000015;
+      }
+      .main-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 1px solid var(--line);
+        padding: 12px 14px;
+      }
+      .title {
+        margin: 0;
+        font-size: clamp(1.2rem, 2.4vw, 1.8rem);
+        text-transform: uppercase;
+        letter-spacing: 0.045em;
+      }
+      .chips {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        font-family: "Avenir Next", "Trebuchet MS", sans-serif;
+      }
+      .chip {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 3px 9px;
+        font-size: 0.74rem;
+        color: var(--muted);
+        background: #ffffffaa;
+      }
+      .chip.live { color: var(--live); border-color: color-mix(in oklab, var(--live), white 65%); }
+      .chip.stale { color: var(--warn); border-color: color-mix(in oklab, var(--warn), white 65%); }
+      .cloud-wrap {
+        min-height: 68vh;
+        padding: 14px;
+      }
+      .cloud {
+        display: flex;
+        flex-wrap: wrap;
+        align-content: flex-start;
+        gap: 10px 11px;
+      }
+      .term {
+        display: inline-block;
+        line-height: 1;
+        padding: 2px 4px;
+        border-bottom: 1px solid #00000020;
+        transition:
+          font-size 280ms ease,
+          opacity 280ms ease,
+          transform 280ms ease,
+          color 280ms ease;
+        will-change: transform, opacity, font-size;
+      }
+      .term.new { transform: translateY(5px); opacity: 0; }
+      .term.remove { transform: translateY(-5px); opacity: 0; }
+      .empty {
+        margin: 8px 0 0;
+        font-family: "Avenir Next", "Trebuchet MS", sans-serif;
+        color: var(--muted);
+      }
+      .side {
+        padding: 14px;
+        display: grid;
+        grid-template-rows: auto auto 1fr;
+        gap: 10px;
+      }
+      .block h3 {
+        margin: 0 0 8px;
+        font-size: 0.73rem;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        font-family: "Avenir Next", "Trebuchet MS", sans-serif;
+        color: var(--muted);
+      }
+      .row {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 5px 0;
+        border-bottom: 1px dashed #00000015;
+        font-family: "Avenir Next", "Trebuchet MS", sans-serif;
+        font-size: 0.88rem;
+      }
+      .rank {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      .rank li {
+        display: grid;
+        grid-template-columns: 20px 1fr auto;
+        gap: 8px;
+        align-items: baseline;
+        padding: 5px 0;
+        border-bottom: 1px dashed #0000001a;
+        font-family: "Avenir Next", "Trebuchet MS", sans-serif;
+      }
+      .rank .idx { color: var(--muted); }
+      .rank .weight { color: #3f4d70; font-variant-numeric: tabular-nums; }
+      @media (max-width: 960px) {
+        .shell { grid-template-columns: 1fr; }
+        .cloud-wrap { min-height: 56vh; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <section class="card">
+        <header class="main-head">
+          <h1 class="title">CotVis Signal Cloud</h1>
+          <div class="chips">
+            <span id="chipState" class="chip">Connecting</span>
+            <span id="chipUpdated" class="chip">Updated --</span>
+            <span id="chipWindow" class="chip">Window --</span>
+          </div>
+        </header>
+        <div class="cloud-wrap">
+          <div id="cloud" class="cloud"></div>
+        </div>
+      </section>
+
+      <aside class="card side">
+        <section class="block">
+          <h3>Stream Health</h3>
+          <div class="row"><span>Refresh cadence</span><span>2.0s</span></div>
+          <div class="row"><span>Last HTTP</span><span id="httpState">pending</span></div>
+          <div class="row"><span>Term count</span><span id="termCount">0</span></div>
+        </section>
+        <section class="block">
+          <h3>Interpretation</h3>
+          <div style="font-family: Avenir Next, Trebuchet MS, sans-serif; font-size: .86rem; color: var(--muted); line-height: 1.45;">
+            Bigger words indicate higher weighted frequency in the active context window.
+            Finalized speech has higher impact than short-lived partial text.
+          </div>
+        </section>
+        <section class="block">
+          <h3>Top Ranked</h3>
+          <ol id="rank" class="rank"></ol>
+        </section>
+      </aside>
+    </div>
+
+    <script>
+      const cloud = document.getElementById("cloud");
+      const rank = document.getElementById("rank");
+      const chipState = document.getElementById("chipState");
+      const chipUpdated = document.getElementById("chipUpdated");
+      const chipWindow = document.getElementById("chipWindow");
+      const httpState = document.getElementById("httpState");
+      const termCount = document.getElementById("termCount");
+
+      const nodeMap = new Map();
+      let pendingRemoval = new Set();
+
+      function fontSize(weight, minW, maxW) {
+        if (maxW <= minW) return 22;
+        const t = (weight - minW) / (maxW - minW);
+        return Math.round(17 + t * 52);
+      }
+
+      function tone(i) {
+        if (i % 6 === 0) return "#235789";
+        if (i % 5 === 0) return "#8a3f2d";
+        if (i % 4 === 0) return "#2f7a4b";
+        return "#14213d";
+      }
+
+      function renderCloud(terms) {
+        const weights = terms.map(([_, w]) => Number(w) || 0);
+        const minW = weights.length ? Math.min(...weights) : 0;
+        const maxW = weights.length ? Math.max(...weights) : 1;
+
+        const nextKeys = new Set(terms.map(([term]) => term));
+
+        for (const [term, node] of nodeMap.entries()) {
+          if (!nextKeys.has(term) && !pendingRemoval.has(term)) {
+            pendingRemoval.add(term);
+            node.classList.add("remove");
+            setTimeout(() => {
+              node.remove();
+              nodeMap.delete(term);
+              pendingRemoval.delete(term);
+            }, 280);
+          }
+        }
+
+        if (!terms.length) {
+          cloud.innerHTML = '<p class="empty">Listening... speak into the microphone.</p>';
+          nodeMap.clear();
+          pendingRemoval.clear();
+          return;
+        }
+
+        if (cloud.querySelector('.empty')) cloud.innerHTML = "";
+
+        const fragment = document.createDocumentFragment();
+        terms.forEach(([term, raw], i) => {
+          const w = Number(raw) || 0;
+          let node = nodeMap.get(term);
+          if (!node) {
+            node = document.createElement("span");
+            node.className = "term new";
+            node.textContent = term;
+            nodeMap.set(term, node);
+            fragment.appendChild(node);
+            requestAnimationFrame(() => node.classList.remove("new"));
+          }
+          node.style.fontSize = `${fontSize(w, minW, maxW)}px`;
+          node.style.opacity = String(0.56 + (maxW === minW ? 0.38 : ((w - minW) / (maxW - minW)) * 0.38));
+          node.style.color = tone(i);
+          node.style.order = String(i);
+        });
+
+        if (fragment.childNodes.length) cloud.appendChild(fragment);
+      }
+
+      function renderRank(terms) {
+        rank.innerHTML = "";
+        terms.slice(0, 12).forEach(([term, raw], i) => {
+          const li = document.createElement("li");
+          li.innerHTML = `<span class="idx">${i + 1}</span><span>${term}</span><span class="weight">${(Number(raw) || 0).toFixed(2)}</span>`;
+          rank.appendChild(li);
+        });
+      }
+
+      function updateState(payload, stale, ok) {
+        const ts = payload.ts ? new Date(payload.ts * 1000) : null;
+        chipState.textContent = stale ? "Stale" : "Live";
+        chipState.className = stale ? "chip stale" : "chip live";
+        chipUpdated.textContent = `Updated ${ts ? ts.toLocaleTimeString() : "--"}`;
+        chipWindow.textContent = `Window ${payload.window_sec ?? "?"}s · Top ${payload.top_k ?? "?"}`;
+        httpState.textContent = ok ? "ok" : "error";
+        termCount.textContent = String(Array.isArray(payload.terms) ? payload.terms.length : 0);
+      }
+
+      async function refresh() {
+        const emptyPayload = { ts: 0, window_sec: "?", top_k: "?", terms: [] };
+        try {
+          const res = await fetch(`/terms?t=${Date.now()}`, { cache: "no-store" });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const payload = await res.json();
+          const stale = !payload.ts || (Date.now() - payload.ts * 1000 > 7000);
+          renderCloud(Array.isArray(payload.terms) ? payload.terms : []);
+          renderRank(Array.isArray(payload.terms) ? payload.terms : []);
+          updateState(payload, stale, true);
+        } catch (_) {
+          updateState(emptyPayload, true, false);
+        }
+      }
+
+      refresh();
+      setInterval(refresh, 2000);
+    </script>
+  </body>
+</html>

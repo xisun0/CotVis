@@ -47,6 +47,46 @@ Useful switches:
 - `--no-jsonl` to hide top-term JSON output
 - `--update-interval`, `--final-window`, `--partial-window`, `--top-k`
 
+## Run With Live Word Cloud
+
+```bash
+make run-web
+```
+
+By default this starts a local UI server at:
+
+`http://127.0.0.1:8765`
+
+UI review pages:
+
+- Active page: `http://127.0.0.1:8765/wordcloud.html`
+- Baseline snapshot: `http://127.0.0.1:8765/wordcloud_v1_baseline.html`
+- Refined snapshot: `http://127.0.0.1:8765/wordcloud_v2_refined.html`
+- Final snapshot: `http://127.0.0.1:8765/wordcloud_v3_final.html`
+
+Optional examples:
+
+- Chinese ASR + web UI:
+  - `make run-web PYTHON=python3.11 ARGS="--lang zh-CN"`
+- Custom UI port:
+  - `make run-web PYTHON=python3.11 ARGS="--ui-port 8877"`
+- Auto-open browser:
+  - `make run-web PYTHON=python3.11 ARGS="--open-browser"`
+
+## Regenerate Local Sample Audio
+
+Sample text is stored in:
+
+`examples/sample_script.txt`
+
+Regenerate WAV test audio anytime:
+
+```bash
+make sample-wav
+```
+
+This creates `examples/sample.wav` locally (not committed).
+
 ## Quick Validation
 
 1. Run `make run`.
@@ -58,6 +98,12 @@ Useful switches:
    - transcript lines marked `PARTIAL` and `FINAL`
    - JSON output every 2 seconds with changing `terms`
 5. Press `Ctrl+C` to stop.
+
+For web mode validation:
+
+1. Run `make run-web`.
+2. Open the printed URL in browser.
+3. Speak and confirm words resize/reflow every ~2 seconds without manual refresh.
 
 ## macOS Permission Path
 

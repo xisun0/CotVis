@@ -5,7 +5,12 @@ __pycache__/
 
 # Local runtime logs
 transcript.log
+examples/sample.wav
+examples/sample.aiff
 
 # Virtual environments
 .venv/
 venv/
+
+# macOS desktop metadata
+.DS_Store
