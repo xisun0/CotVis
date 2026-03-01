@@ -47,6 +47,7 @@ Useful switches:
 - `--no-print-transcript` to hide transcript logs
 - `--no-jsonl` to hide top-term JSON output
 - `--update-interval`, `--final-window`, `--partial-window`, `--top-k`
+- `--full-session` to keep all FINAL transcript from the whole session (no 60s pruning)
 
 ## Optional Local LLM Reranking
 
@@ -116,6 +117,23 @@ make sample-wav
 ```
 
 This creates `examples/sample.wav` locally (not committed).
+
+## Two-Part Testing
+
+1) ASR test (audio -> transcript):
+
+```bash
+make test-asr PYTHON=python3.11
+```
+
+2) Transcript-understanding test (simulated live stream from text):
+
+```bash
+make test-nlp PYTHON=python3.11
+```
+
+This second mode replays `examples/sample_script.txt` as a live transcript stream
+(`PARTIAL` + `FINAL`) and updates the same term pipeline/UI, without microphone dependency.
 
 ## Quick Validation
 

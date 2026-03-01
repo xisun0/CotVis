@@ -25,6 +25,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--lang", default="en-US")
     parser.add_argument("--update-interval", type=float, default=2.0)
     parser.add_argument("--final-window", type=int, default=60)
+    parser.add_argument("--full-session", action="store_true", help="Use all FINAL transcript from session (no final window pruning).")
     parser.add_argument("--partial-window", type=int, default=10)
     parser.add_argument("--top-k", type=int, default=60)
     parser.add_argument(
@@ -47,6 +48,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--llm-weight", type=float, default=2.0)
     parser.add_argument("--llm-top-k", type=int, default=30)
     parser.add_argument("--llm-ctx", type=int, default=2048)
+    parser.add_argument("--llm-max-tokens", type=int, default=420)
+    parser.add_argument("--llm-primary", action=argparse.BooleanOptionalAction, default=True)
     return parser
 
 
@@ -59,21 +62,24 @@ def main() -> int:
             llm_reranker = LocalLLMReranker(
                 model_path=args.llm_model,
                 n_ctx=args.llm_ctx,
-                max_tokens=220,
+                max_tokens=args.llm_max_tokens,
                 temperature=0.0,
             )
         except Exception as exc:
             print(f"Failed to initialize local LLM reranker: {exc}", file=sys.stderr)
             return 1
 
+    final_window_sec = 0 if args.full_session else args.final_window
+
     manager = ContextManager(
-        final_window_sec=args.final_window,
+        final_window_sec=final_window_sec,
         partial_window_sec=args.partial_window,
         top_k=args.top_k,
         llm_reranker=llm_reranker,
         llm_interval_sec=args.llm_interval,
         llm_weight=args.llm_weight,
         llm_top_k=args.llm_top_k,
+        llm_primary=(args.llm_primary and llm_reranker is not None),
     )
 
     backend = MacSpeechBackend(lang=args.lang, verbose=args.verbose)

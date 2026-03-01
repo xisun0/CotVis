@@ -22,6 +22,7 @@ class ContextManager:
         llm_interval_sec: float = 12.0,
         llm_weight: float = 2.0,
         llm_top_k: int = 30,
+        llm_primary: bool = False,
     ) -> None:
         self.final_window_sec = final_window_sec
         self.partial_window_sec = partial_window_sec
@@ -39,6 +40,7 @@ class ContextManager:
         self._llm_interval_sec = llm_interval_sec
         self._llm_weight = llm_weight
         self._llm_top_k = llm_top_k
+        self._llm_primary = llm_primary
         self._last_llm_ts = 0.0
         self._llm_cache: dict[str, float] = {}
 
@@ -62,11 +64,12 @@ class ContextManager:
 
     def compute_top_terms(self, now_ts: float | None = None) -> TopTermsEvent:
         now = now_ts if now_ts is not None else time.time()
-        final_cutoff = now - float(self.final_window_sec)
+        final_cutoff = now - float(self.final_window_sec) if self.final_window_sec > 0 else None
 
         with self._lock:
-            while self.stable_segments and self.stable_segments[0][0] < final_cutoff:
-                self.stable_segments.popleft()
+            if final_cutoff is not None:
+                while self.stable_segments and self.stable_segments[0][0] < final_cutoff:
+                    self.stable_segments.popleft()
 
             final_texts = [text for _, text in self.stable_segments]
             final_counts = count_tokens(final_texts)
@@ -82,8 +85,9 @@ class ContextManager:
                 phrase_texts.append(self.ephemeral_text)
 
             merged = self._lm_scorer.rescore_tokens(merged)
-            for phrase, score in self._lm_scorer.phrase_scores(phrase_texts).items():
-                merged[phrase] = merged.get(phrase, 0.0) + score
+            if not self._llm_primary:
+                for phrase, score in self._lm_scorer.phrase_scores(phrase_texts).items():
+                    merged[phrase] = merged.get(phrase, 0.0) + score
             llm_cache = dict(self._llm_cache)
 
         now_for_llm = time.time()
@@ -104,8 +108,13 @@ class ContextManager:
             except Exception:
                 pass
 
-        for term, s in llm_cache.items():
-            merged[term] = merged.get(term, 0.0) + (s * self._llm_weight)
+        if self._llm_primary and llm_cache:
+            # In primary mode, concept terms from LLM become the ranking backbone.
+            # Keep weights in 0..1-ish range for semantic confidence readability.
+            merged = {term: s for term, s in llm_cache.items()}
+        else:
+            for term, s in llm_cache.items():
+                merged[term] = merged.get(term, 0.0) + (s * self._llm_weight)
 
         top_terms = sorted(merged.items(), key=lambda item: item[1], reverse=True)[: self.top_k]
 
