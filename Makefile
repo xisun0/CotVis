@@ -3,11 +3,15 @@ ARGS ?=
 DEMO_PORT ?= 8765
 DEMO_TAIL_SEC ?= 8
 
-.PHONY: setup run run-web demo sample-wav setup-local commit-help
+.PHONY: setup setup-llm run run-web demo sample-wav setup-local commit-help
 
 setup:
 	$(PYTHON) -m pip install --upgrade pip
 	$(PYTHON) -m pip install -e .
+
+setup-llm:
+	$(PYTHON) -m pip install --upgrade pip
+	$(PYTHON) -m pip install -e ".[llm]"
 
 run:
 	$(PYTHON) -m realtime_asr.cli $(ARGS)

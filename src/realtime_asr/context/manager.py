@@ -7,6 +7,7 @@ from threading import Lock
 from realtime_asr.context.tokenizer import count_tokens
 from realtime_asr.events import TopTermsEvent, TranscriptEvent
 from realtime_asr.lm import LanguageModelScorer
+from realtime_asr.lm.llm_reranker import LocalLLMReranker
 
 
 class ContextManager:
@@ -17,6 +18,10 @@ class ContextManager:
         top_k: int = 60,
         final_weight: float = 1.0,
         partial_weight: float = 0.3,
+        llm_reranker: LocalLLMReranker | None = None,
+        llm_interval_sec: float = 12.0,
+        llm_weight: float = 2.0,
+        llm_top_k: int = 30,
     ) -> None:
         self.final_window_sec = final_window_sec
         self.partial_window_sec = partial_window_sec
@@ -30,6 +35,12 @@ class ContextManager:
         self.last_full_text = ""
         self._lock = Lock()
         self._lm_scorer = LanguageModelScorer(lang="en")
+        self._llm_reranker = llm_reranker
+        self._llm_interval_sec = llm_interval_sec
+        self._llm_weight = llm_weight
+        self._llm_top_k = llm_top_k
+        self._last_llm_ts = 0.0
+        self._llm_cache: dict[str, float] = {}
 
     def on_event(self, event: TranscriptEvent) -> None:
         text = event.text.strip()
@@ -73,6 +84,28 @@ class ContextManager:
             merged = self._lm_scorer.rescore_tokens(merged)
             for phrase, score in self._lm_scorer.phrase_scores(phrase_texts).items():
                 merged[phrase] = merged.get(phrase, 0.0) + score
+            llm_cache = dict(self._llm_cache)
+
+        now_for_llm = time.time()
+        if (
+            self._llm_reranker is not None
+            and (now_for_llm - self._last_llm_ts) >= self._llm_interval_sec
+        ):
+            try:
+                llm_scores = self._llm_reranker.suggest_scores(
+                    texts=phrase_texts,
+                    base_terms=merged,
+                    top_k=min(self.top_k, self._llm_top_k),
+                )
+                with self._lock:
+                    self._llm_cache = llm_scores
+                llm_cache = llm_scores
+                self._last_llm_ts = now_for_llm
+            except Exception:
+                pass
+
+        for term, s in llm_cache.items():
+            merged[term] = merged.get(term, 0.0) + (s * self._llm_weight)
 
         top_terms = sorted(merged.items(), key=lambda item: item[1], reverse=True)[: self.top_k]
 

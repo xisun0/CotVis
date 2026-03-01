@@ -48,6 +48,27 @@ Useful switches:
 - `--no-jsonl` to hide top-term JSON output
 - `--update-interval`, `--final-window`, `--partial-window`, `--top-k`
 
+## Optional Local LLM Reranking
+
+You can enable a local instruct model (GGUF) to refine topic terms:
+
+```bash
+pip install -e ".[llm]"
+make run-web PYTHON=python3.11 ARGS="--llm-model /path/to/model.gguf --open-browser"
+```
+
+Recommended small models:
+
+- Qwen2.5-3B-Instruct (GGUF)
+- Llama-3.2-3B-Instruct (GGUF)
+
+Useful controls:
+
+- `--llm-interval` (default 12s): how often to query local LLM
+- `--llm-weight` (default 2.0): blend strength of LLM suggestions
+- `--llm-top-k` (default 30): max LLM terms
+- `--llm-ctx` (default 2048): context size for llama.cpp
+
 ## Run With Live Word Cloud
 
 ```bash

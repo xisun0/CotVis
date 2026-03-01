@@ -11,6 +11,7 @@ from realtime_asr.asr_backend import MacSpeechBackend
 from realtime_asr.asr_backend.mac_speech import MacSpeechBackendError
 from realtime_asr.context.manager import ContextManager
 from realtime_asr.events import TranscriptEvent
+from realtime_asr.lm import LocalLLMReranker
 from realtime_asr.web import TopTermsWebServer
 
 try:
@@ -41,16 +42,38 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--open-browser", action="store_true")
     parser.add_argument("--ui-host", default="127.0.0.1")
     parser.add_argument("--ui-port", type=int, default=8765)
+    parser.add_argument("--llm-model", default=None, help="Local GGUF model path for optional LLM reranking.")
+    parser.add_argument("--llm-interval", type=float, default=12.0)
+    parser.add_argument("--llm-weight", type=float, default=2.0)
+    parser.add_argument("--llm-top-k", type=int, default=30)
+    parser.add_argument("--llm-ctx", type=int, default=2048)
     return parser
 
 
 def main() -> int:
     args = build_parser().parse_args()
 
+    llm_reranker = None
+    if args.llm_model:
+        try:
+            llm_reranker = LocalLLMReranker(
+                model_path=args.llm_model,
+                n_ctx=args.llm_ctx,
+                max_tokens=220,
+                temperature=0.0,
+            )
+        except Exception as exc:
+            print(f"Failed to initialize local LLM reranker: {exc}", file=sys.stderr)
+            return 1
+
     manager = ContextManager(
         final_window_sec=args.final_window,
         partial_window_sec=args.partial_window,
         top_k=args.top_k,
+        llm_reranker=llm_reranker,
+        llm_interval_sec=args.llm_interval,
+        llm_weight=args.llm_weight,
+        llm_top_k=args.llm_top_k,
     )
 
     backend = MacSpeechBackend(lang=args.lang, verbose=args.verbose)
@@ -86,6 +109,8 @@ def main() -> int:
         return 1
     if args.verbose:
         print("[CLI] Backend started. Waiting for speech...")
+        if args.llm_model:
+            print(f"[CLI] Local LLM rerank enabled: {args.llm_model}")
 
     try:
         while True:
