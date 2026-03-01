@@ -39,6 +39,7 @@ Default CLI behavior:
 
 - prints transcript updates (`[PARTIAL] ...` / `[FINAL] ...`)
 - prints one TopTerms JSON line every 2 seconds
+- term ranking uses a local LM-style scorer to downweight generic words and surface more meaningful topic terms
 
 Useful switches:
 
@@ -52,6 +53,14 @@ Useful switches:
 ```bash
 make run-web
 ```
+
+One-command demo (start server + open browser + play sample audio + stop):
+
+```bash
+make demo PYTHON=python3.11
+```
+
+Note: this still uses microphone input. Keep speaker volume audible so the mic can capture playback.
 
 By default this starts a local UI server at:
 

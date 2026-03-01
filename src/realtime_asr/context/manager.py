@@ -6,6 +6,7 @@ from threading import Lock
 
 from realtime_asr.context.tokenizer import count_tokens
 from realtime_asr.events import TopTermsEvent, TranscriptEvent
+from realtime_asr.lm import LanguageModelScorer
 
 
 class ContextManager:
@@ -28,6 +29,7 @@ class ContextManager:
         self.ephemeral_ts = 0.0
         self.last_full_text = ""
         self._lock = Lock()
+        self._lm_scorer = LanguageModelScorer(lang="en")
 
     def on_event(self, event: TranscriptEvent) -> None:
         text = event.text.strip()
@@ -55,15 +57,22 @@ class ContextManager:
             while self.stable_segments and self.stable_segments[0][0] < final_cutoff:
                 self.stable_segments.popleft()
 
-            final_counts = count_tokens(text for _, text in self.stable_segments)
+            final_texts = [text for _, text in self.stable_segments]
+            final_counts = count_tokens(final_texts)
             merged: dict[str, float] = {
                 token: count * self.final_weight for token, count in final_counts.items()
             }
 
+            phrase_texts = list(final_texts)
             if self.ephemeral_text and (now - self.ephemeral_ts) <= self.partial_window_sec:
                 partial_counts = count_tokens([self.ephemeral_text])
                 for token, count in partial_counts.items():
                     merged[token] = merged.get(token, 0.0) + (count * self.partial_weight)
+                phrase_texts.append(self.ephemeral_text)
+
+            merged = self._lm_scorer.rescore_tokens(merged)
+            for phrase, score in self._lm_scorer.phrase_scores(phrase_texts).items():
+                merged[phrase] = merged.get(phrase, 0.0) + score
 
         top_terms = sorted(merged.items(), key=lambda item: item[1], reverse=True)[: self.top_k]
 

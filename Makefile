@@ -1,7 +1,9 @@
 PYTHON ?= python3
 ARGS ?=
+DEMO_PORT ?= 8765
+DEMO_TAIL_SEC ?= 8
 
-.PHONY: setup run run-web sample-wav setup-local commit-help
+.PHONY: setup run run-web demo sample-wav setup-local commit-help
 
 setup:
 	$(PYTHON) -m pip install --upgrade pip
@@ -12,6 +14,21 @@ run:
 
 run-web:
 	$(PYTHON) -m realtime_asr.cli --serve-ui $(ARGS)
+
+demo: sample-wav
+	@echo "Starting CotVis demo on http://127.0.0.1:$(DEMO_PORT)"
+	@set -e; \
+	$(PYTHON) -m realtime_asr.cli --serve-ui --open-browser --ui-port $(DEMO_PORT) $(ARGS) > /tmp/cotvis_demo.log 2>&1 & \
+	ASR_PID=$$!; \
+	cleanup() { kill $$ASR_PID >/dev/null 2>&1 || true; }; \
+	trap cleanup EXIT INT TERM; \
+	sleep 3; \
+	afplay examples/sample.wav; \
+	sleep $(DEMO_TAIL_SEC); \
+	cleanup; \
+	trap - EXIT INT TERM; \
+	echo "Demo finished. Recent output:"; \
+	tail -n 40 /tmp/cotvis_demo.log
 
 sample-wav:
 	mkdir -p examples

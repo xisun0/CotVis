@@ -11,7 +11,8 @@ requires-python = ">=3.11"
 dependencies = [
   "pyobjc-core>=10.0; platform_system == 'Darwin'",
   "pyobjc-framework-Speech>=10.0; platform_system == 'Darwin'",
-  "pyobjc-framework-AVFoundation>=10.0; platform_system == 'Darwin'"
+  "pyobjc-framework-AVFoundation>=10.0; platform_system == 'Darwin'",
+  "wordfreq>=3.1.1"
 ]
 
 [project.scripts]
