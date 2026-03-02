@@ -3,106 +3,329 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>CotVis Signal Cloud</title>
+    <title>CotVis Signal Radar</title>
     <style>
       :root {
-        --ink: #14213d;
-        --bg-a: #f7f1df;
-        --bg-b: #e8ddbf;
-        --card: #fffcf3d9;
-        --line: #d4c39a;
-        --muted: #5b6480;
-        --live: #2f7a4b;
-        --warn: #c24646;
+        --bg-0: #f2efe8;
+        --bg-1: #e2dac8;
+        --ink-0: #1f252b;
+        --ink-1: #38424d;
+        --muted: #5f6d7a;
+        --card: #fffdf8d6;
+        --line: #cabd9f;
+        --accent-a: #165e63;
+        --accent-b: #a2411a;
+        --rise: #1d7f4f;
+        --fall: #b64b3f;
+        --stable: #6e7c88;
+        --new: #8f6513;
       }
-      * { box-sizing: border-box; }
+
+      * {
+        box-sizing: border-box;
+      }
+
       body {
         margin: 0;
-        color: var(--ink);
         min-height: 100vh;
+        color: var(--ink-0);
+        font-family: "Iowan Old Style", "Georgia", serif;
         background:
-          radial-gradient(1200px 500px at 8% -10%, #fff8 0 48%, transparent 60%),
-          radial-gradient(600px 400px at 95% 20%, #00000008 0 35%, transparent 60%),
-          linear-gradient(140deg, var(--bg-a), var(--bg-b));
-        font-family: "Baskerville", "Palatino", serif;
+          radial-gradient(1000px 520px at 8% -16%, #fff9eb 0%, #fff0 64%),
+          radial-gradient(520px 340px at 92% 12%, #0000000f 0%, #0000 67%),
+          linear-gradient(145deg, var(--bg-0), var(--bg-1));
       }
+
+      body::after {
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        opacity: 0.038;
+        background-image:
+          linear-gradient(to right, #000 1px, transparent 1px),
+          linear-gradient(to bottom, #000 1px, transparent 1px);
+        background-size: 26px 26px;
+      }
+
       .shell {
-        max-width: 1240px;
-        margin: 18px auto;
+        max-width: 1280px;
+        margin: 20px auto;
         padding: 14px;
         display: grid;
         gap: 14px;
-        grid-template-columns: minmax(0, 2.3fr) minmax(280px, 1fr);
+        grid-template-columns: minmax(0, 2.35fr) minmax(300px, 1fr);
       }
+
       .card {
         border: 1px solid var(--line);
         background: var(--card);
-        box-shadow: 0 14px 38px #00000015;
+        backdrop-filter: blur(6px);
+        box-shadow: 0 14px 34px #00000018;
       }
+
       .main-head {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
+        padding: 14px 16px;
         border-bottom: 1px solid var(--line);
-        padding: 12px 14px;
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 12px;
       }
-      .title {
+
+      .title-wrap h1 {
         margin: 0;
-        font-size: clamp(1.2rem, 2.4vw, 1.8rem);
+        font-size: clamp(1.2rem, 3vw, 2rem);
+        letter-spacing: 0.03em;
         text-transform: uppercase;
-        letter-spacing: 0.045em;
+        line-height: 1;
       }
+
+      .subtitle {
+        margin: 7px 0 0;
+        color: var(--muted);
+        font-family: "Avenir Next", "Trebuchet MS", sans-serif;
+        font-size: 0.82rem;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
       .chips {
         display: flex;
         gap: 8px;
         flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+
+      .chip {
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: #ffffffbf;
+        font-size: 0.74rem;
+        padding: 4px 10px;
+        color: var(--muted);
         font-family: "Avenir Next", "Trebuchet MS", sans-serif;
       }
-      .chip {
-        border: 1px solid var(--line);
-        border-radius: 999px;
-        padding: 3px 9px;
-        font-size: 0.74rem;
-        color: var(--muted);
-        background: #ffffffaa;
+
+      .chip.live {
+        color: var(--rise);
+        border-color: color-mix(in oklab, var(--rise), white 62%);
       }
-      .chip.live { color: var(--live); border-color: color-mix(in oklab, var(--live), white 65%); }
-      .chip.stale { color: var(--warn); border-color: color-mix(in oklab, var(--warn), white 65%); }
+
+      .chip.stale {
+        color: var(--fall);
+        border-color: color-mix(in oklab, var(--fall), white 62%);
+      }
+
       .cloud-wrap {
-        min-height: 68vh;
-        padding: 14px;
+        min-height: 70vh;
+        padding: 18px;
+        position: relative;
+        overflow: hidden;
       }
+
+      .cloud-wrap::before,
+      .cloud-wrap::after {
+        content: "";
+        position: absolute;
+        border-radius: 999px;
+        pointer-events: none;
+      }
+
+      .cloud-wrap::before {
+        width: 340px;
+        height: 340px;
+        right: -90px;
+        top: -90px;
+        background: radial-gradient(circle, #165e6312 0%, #165e6300 70%);
+      }
+
+      .cloud-wrap::after {
+        width: 300px;
+        height: 300px;
+        left: -70px;
+        bottom: -70px;
+        background: radial-gradient(circle, #a2411a12 0%, #a2411a00 70%);
+      }
+
+      .cloud-layout {
+        position: relative;
+        z-index: 1;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 220px;
+        gap: 12px;
+        align-items: start;
+      }
+
       .cloud {
         display: flex;
         flex-wrap: wrap;
+        gap: 10px 12px;
         align-content: flex-start;
-        gap: 10px 11px;
+        min-height: 55vh;
       }
+
+      .mini-stats {
+        border: 1px solid #0000001b;
+        border-radius: 12px;
+        background: #fffdf4c9;
+        padding: 10px;
+      }
+
+      .mini-stats h3 {
+        margin: 0 0 10px;
+        font-size: 0.72rem;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--muted);
+        font-family: "Avenir Next", "Trebuchet MS", sans-serif;
+      }
+
+      .mini-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 4px 0;
+        border-bottom: 1px dashed #00000016;
+        font-family: "Avenir Next", "Trebuchet MS", sans-serif;
+        font-size: 0.82rem;
+      }
+
+      .mini-row:last-child {
+        border-bottom: 0;
+      }
+
+      .mini-muted {
+        color: var(--muted);
+      }
+
+      .source-list {
+        display: none;
+      }
+
+      .source-list.active {
+        display: block;
+      }
+
       .term {
-        display: inline-block;
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
         line-height: 1;
-        padding: 2px 4px;
-        border-bottom: 1px solid #00000020;
+        border: 1px solid #00000016;
+        border-radius: 999px;
+        padding: 5px 9px;
+        background: #ffffffc2;
         transition:
-          font-size 280ms ease,
-          opacity 280ms ease,
-          transform 280ms ease,
-          color 280ms ease;
-        will-change: transform, opacity, font-size;
+          font-size 300ms cubic-bezier(.2,.8,.2,1),
+          opacity 300ms ease,
+          transform 300ms ease,
+          background-color 300ms ease,
+          color 300ms ease,
+          border-color 300ms ease;
+        will-change: transform, font-size, opacity;
       }
-      .term.new { transform: translateY(5px); opacity: 0; }
-      .term.remove { transform: translateY(-5px); opacity: 0; }
+
+      .term .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 999px;
+        background: var(--stable);
+        opacity: 0.9;
+        flex: 0 0 auto;
+      }
+
+      .term .label {
+        font-weight: 700;
+      }
+
+      .term .arrow {
+        position: absolute;
+        right: 5px;
+        top: 2px;
+        font-size: 0.55em;
+        color: color-mix(in oklab, var(--stable), #000 10%);
+        opacity: 0.72;
+        font-family: "Avenir Next", "Trebuchet MS", sans-serif;
+      }
+
+      .term.state-rising {
+        border-color: color-mix(in oklab, var(--rise), white 66%);
+        background: color-mix(in oklab, var(--rise), white 93%);
+      }
+
+      .term.state-rising .dot {
+        background: var(--rise);
+      }
+
+      .term.state-rising .arrow {
+        color: var(--rise);
+      }
+
+      .term.state-fading {
+        border-color: color-mix(in oklab, var(--fall), white 66%);
+        background: color-mix(in oklab, var(--fall), white 94%);
+      }
+
+      .term.state-fading .dot {
+        background: var(--fall);
+      }
+
+      .term.state-fading .arrow {
+        color: var(--fall);
+      }
+
+      .term.state-stable {
+        border-color: color-mix(in oklab, var(--stable), white 78%);
+      }
+
+      .term.state-stable .dot {
+        background: var(--stable);
+      }
+
+      .term.state-new {
+        border-color: color-mix(in oklab, var(--new), white 70%);
+        background: color-mix(in oklab, var(--new), white 94%);
+      }
+
+      .term.state-new .dot {
+        background: var(--new);
+      }
+
+      .term.entering {
+        transform: translateY(8px) scale(0.96);
+        opacity: 0;
+      }
+
+      .term.removing {
+        transform: translateY(-7px) scale(0.95);
+        opacity: 0;
+      }
+
+      .term.top {
+        transform: scale(1.2);
+        transform-origin: left center;
+      }
+
+      .term.top.term.removing,
+      .term.top.term.entering {
+        transform-origin: left center;
+      }
+
       .empty {
-        margin: 8px 0 0;
+        margin: 12px 0 0;
         font-family: "Avenir Next", "Trebuchet MS", sans-serif;
         color: var(--muted);
       }
+
       .side {
         padding: 14px;
         display: grid;
         grid-template-rows: auto auto 1fr;
         gap: 10px;
       }
+
       .block h3 {
         margin: 0 0 8px;
         font-size: 0.73rem;
@@ -111,34 +334,119 @@
         font-family: "Avenir Next", "Trebuchet MS", sans-serif;
         color: var(--muted);
       }
+
       .row {
         display: flex;
         justify-content: space-between;
         gap: 8px;
         padding: 5px 0;
-        border-bottom: 1px dashed #00000015;
+        border-bottom: 1px dashed #00000018;
         font-family: "Avenir Next", "Trebuchet MS", sans-serif;
         font-size: 0.88rem;
       }
+
+      .spark {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 6px;
+      }
+
+      .spark > div {
+        border: 1px solid #00000018;
+        background: #ffffffb5;
+        border-radius: 8px;
+        padding: 8px 6px;
+        text-align: center;
+        font-family: "Avenir Next", "Trebuchet MS", sans-serif;
+      }
+
+      .spark b {
+        display: block;
+        font-size: 1.1rem;
+        line-height: 1;
+      }
+
+      .spark span {
+        display: block;
+        margin-top: 3px;
+        font-size: 0.68rem;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
       .rank {
         margin: 0;
         padding: 0;
         list-style: none;
       }
+
       .rank li {
         display: grid;
-        grid-template-columns: 20px 1fr auto;
+        grid-template-columns: 22px 1fr auto auto;
         gap: 8px;
         align-items: baseline;
-        padding: 5px 0;
+        padding: 6px 0;
         border-bottom: 1px dashed #0000001a;
         font-family: "Avenir Next", "Trebuchet MS", sans-serif;
       }
-      .rank .idx { color: var(--muted); }
-      .rank .weight { color: #3f4d70; font-variant-numeric: tabular-nums; }
-      @media (max-width: 960px) {
-        .shell { grid-template-columns: 1fr; }
-        .cloud-wrap { min-height: 56vh; }
+
+      .idx {
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
+      }
+
+      .weight {
+        color: var(--ink-1);
+        font-variant-numeric: tabular-nums;
+      }
+
+      .delta {
+        min-width: 36px;
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+        font-size: 0.8rem;
+      }
+
+      .delta.up {
+        color: var(--rise);
+      }
+
+      .delta.down {
+        color: var(--fall);
+      }
+
+      .delta.flat {
+        color: var(--muted);
+      }
+
+      @media (max-width: 1080px) {
+        .shell {
+          grid-template-columns: 1fr;
+        }
+
+        .cloud-wrap {
+          min-height: 56vh;
+        }
+
+        .main-head {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+
+        .chips {
+          justify-content: flex-start;
+        }
+      }
+
+      @media (max-width: 760px) {
+        .cloud-layout {
+          grid-template-columns: 1fr;
+        }
+
+        .cloud {
+          min-height: 40vh;
+        }
       }
     </style>
   </head>
@@ -146,7 +454,10 @@
     <div class="shell">
       <section class="card">
         <header class="main-head">
-          <h1 class="title">CotVis Signal Cloud</h1>
+          <div class="title-wrap">
+            <h1>CotVis Signal Radar</h1>
+            <p class="subtitle">Live concept intensity and movement</p>
+          </div>
           <div class="chips">
             <span id="chipState" class="chip">Connecting</span>
             <span id="chipUpdated" class="chip">Updated --</span>
@@ -154,7 +465,26 @@
           </div>
         </header>
         <div class="cloud-wrap">
-          <div id="cloud" class="cloud"></div>
+          <div class="cloud-layout">
+            <div id="cloud" class="cloud"></div>
+            <aside class="mini-stats">
+              <h3>Live Stats</h3>
+              <div class="mini-row"><span>Concept count</span><span id="miniConceptCount">0</span></div>
+              <div class="mini-row"><span>New</span><span id="miniNewCount">0</span></div>
+              <div class="mini-row"><span>Rising</span><span id="miniRiseCount">0</span></div>
+              <div class="mini-row"><span>Stable</span><span id="miniStableCount">0</span></div>
+              <div class="mini-row"><span>Fading</span><span id="miniFadeCount">0</span></div>
+              <div id="sourceList" class="source-list">
+                <div class="mini-row"><span>Source final</span><span id="sourceFinal">0</span></div>
+                <div class="mini-row"><span>Source partial</span><span id="sourcePartial">0</span></div>
+                <div class="mini-row"><span>Source llm</span><span id="sourceLlm">0</span></div>
+                <div class="mini-row"><span>Source mixed</span><span id="sourceMixed">0</span></div>
+              </div>
+              <div class="mini-row"><span>Updated</span><span id="miniUpdated" class="mini-muted">--</span></div>
+              <div class="mini-row"><span>Window</span><span id="miniWindow" class="mini-muted">--</span></div>
+              <div class="mini-row"><span>Top N</span><span id="miniTopK" class="mini-muted">--</span></div>
+            </aside>
+          </div>
         </div>
       </section>
 
@@ -166,10 +496,11 @@
           <div class="row"><span>Term count</span><span id="termCount">0</span></div>
         </section>
         <section class="block">
-          <h3>Interpretation</h3>
-          <div style="font-family: Avenir Next, Trebuchet MS, sans-serif; font-size: .86rem; color: var(--muted); line-height: 1.45;">
-            Bigger words indicate higher weighted frequency in the active context window.
-            Finalized speech has higher impact than short-lived partial text.
+          <h3>Movement Snapshot</h3>
+          <div class="spark">
+            <div><b id="riseCount">0</b><span>Rising</span></div>
+            <div><b id="flatCount">0</b><span>Steady</span></div>
+            <div><b id="fallCount">0</b><span>Fading</span></div>
           </div>
         </section>
         <section class="block">
@@ -187,89 +518,217 @@
       const chipWindow = document.getElementById("chipWindow");
       const httpState = document.getElementById("httpState");
       const termCount = document.getElementById("termCount");
+      const riseCount = document.getElementById("riseCount");
+      const flatCount = document.getElementById("flatCount");
+      const fallCount = document.getElementById("fallCount");
+      const miniConceptCount = document.getElementById("miniConceptCount");
+      const miniNewCount = document.getElementById("miniNewCount");
+      const miniRiseCount = document.getElementById("miniRiseCount");
+      const miniStableCount = document.getElementById("miniStableCount");
+      const miniFadeCount = document.getElementById("miniFadeCount");
+      const miniUpdated = document.getElementById("miniUpdated");
+      const miniWindow = document.getElementById("miniWindow");
+      const miniTopK = document.getElementById("miniTopK");
+      const sourceList = document.getElementById("sourceList");
+      const sourceFinal = document.getElementById("sourceFinal");
+      const sourcePartial = document.getElementById("sourcePartial");
+      const sourceLlm = document.getElementById("sourceLlm");
+      const sourceMixed = document.getElementById("sourceMixed");
 
       const nodeMap = new Map();
-      let pendingRemoval = new Set();
+      const prevWeights = new Map();
+      const pendingRemoval = new Set();
+
+      function asNumber(value) {
+        const n = Number(value);
+        return Number.isFinite(n) ? n : 0;
+      }
+
+      function termTone(index) {
+        if (index % 5 === 0) return "color-mix(in oklab, var(--accent-a), black 8%)";
+        if (index % 3 === 0) return "color-mix(in oklab, var(--accent-b), black 2%)";
+        return "var(--ink-0)";
+      }
+
+      function normalizeTerm(entry, idx) {
+        if (Array.isArray(entry)) {
+          return {
+            term: String(entry[0] ?? "").trim(),
+            score: asNumber(entry[1]),
+            state: null,
+            velocity: null,
+            source: null,
+            rank: idx + 1,
+          };
+        }
+
+        if (entry && typeof entry === "object") {
+          return {
+            term: String(entry.term ?? entry.label ?? "").trim(),
+            score: asNumber(entry.score ?? entry.weight ?? entry.value ?? 0),
+            state: entry.state ?? null,
+            velocity: entry.velocity ?? null,
+            source: entry.source ?? null,
+            rank: asNumber(entry.rank) || idx + 1,
+          };
+        }
+
+        return { term: "", score: 0, state: null, velocity: null, source: null, rank: idx + 1 };
+      }
+
+      function resolveState(termObj) {
+        const raw = termObj.state ? String(termObj.state).toLowerCase() : "";
+        if (raw === "rising") return "rising";
+        if (raw === "fading") return "fading";
+        if (raw === "new") return "new";
+        if (raw === "stable" || raw === "flat") return "stable";
+
+        const velocity = asNumber(termObj.velocity);
+        if (velocity !== 0) {
+          if (velocity > 0.09) return "rising";
+          if (velocity < -0.09) return "fading";
+        }
+        return "stable";
+      }
+
+      function stateArrow(state) {
+        if (state === "rising") return "↑";
+        if (state === "fading") return "↓";
+        if (state === "new") return "•";
+        return "→";
+      }
 
       function fontSize(weight, minW, maxW) {
-        if (maxW <= minW) return 22;
+        if (maxW <= minW) return 20;
         const t = (weight - minW) / (maxW - minW);
-        return Math.round(17 + t * 52);
+        return Math.round(16 + t * 36);
       }
 
-      function tone(i) {
-        if (i % 6 === 0) return "#235789";
-        if (i % 5 === 0) return "#8a3f2d";
-        if (i % 4 === 0) return "#2f7a4b";
-        return "#14213d";
+      function aggregateStats(terms) {
+        const stats = {
+          conceptCount: terms.length,
+          new: 0,
+          rising: 0,
+          stable: 0,
+          fading: 0,
+          sources: { final: 0, partial: 0, llm: 0, mixed: 0 },
+          hasSource: false,
+        };
+
+        terms.forEach((item) => {
+          if (item.state in stats) {
+            stats[item.state] += 1;
+          } else {
+            stats.stable += 1;
+          }
+
+          const src = item.source ? String(item.source).toLowerCase() : "";
+          if (src && src in stats.sources) {
+            stats.sources[src] += 1;
+            stats.hasSource = true;
+          }
+        });
+        return stats;
       }
 
-      function renderCloud(terms) {
-        const weights = terms.map(([_, w]) => Number(w) || 0);
+      function renderCloud(termObjects) {
+        const weights = termObjects.map((item) => item.score);
         const minW = weights.length ? Math.min(...weights) : 0;
         const maxW = weights.length ? Math.max(...weights) : 1;
-
-        const nextKeys = new Set(terms.map(([term]) => term));
+        const nextKeys = new Set(termObjects.map((item) => item.term));
 
         for (const [term, node] of nodeMap.entries()) {
           if (!nextKeys.has(term) && !pendingRemoval.has(term)) {
             pendingRemoval.add(term);
-            node.classList.add("remove");
+            node.classList.add("removing");
             setTimeout(() => {
               node.remove();
               nodeMap.delete(term);
               pendingRemoval.delete(term);
-            }, 280);
+            }, 300);
           }
         }
 
-        if (!terms.length) {
-          cloud.innerHTML = '<p class="empty">Listening... speak into the microphone.</p>';
+        if (!termObjects.length) {
+          cloud.innerHTML = '<p class="empty">Listening... start speaking to populate concept signals.</p>';
           nodeMap.clear();
           pendingRemoval.clear();
           return;
         }
-
-        if (cloud.querySelector('.empty')) cloud.innerHTML = "";
+        if (cloud.querySelector(".empty")) cloud.innerHTML = "";
 
         const fragment = document.createDocumentFragment();
-        terms.forEach(([term, raw], i) => {
-          const w = Number(raw) || 0;
-          let node = nodeMap.get(term);
+        termObjects.forEach((item, i) => {
+          let node = nodeMap.get(item.term);
           if (!node) {
             node = document.createElement("span");
-            node.className = "term new";
-            node.textContent = term;
-            nodeMap.set(term, node);
+            node.className = "term entering";
+            node.innerHTML = '<span class="dot"></span><span class="label"></span><span class="arrow"></span>';
+            nodeMap.set(item.term, node);
             fragment.appendChild(node);
-            requestAnimationFrame(() => node.classList.remove("new"));
+            requestAnimationFrame(() => node.classList.remove("entering"));
           }
-          node.style.fontSize = `${fontSize(w, minW, maxW)}px`;
-          node.style.opacity = String(0.56 + (maxW === minW ? 0.38 : ((w - minW) / (maxW - minW)) * 0.38));
-          node.style.color = tone(i);
+
+          node.classList.remove("state-rising", "state-fading", "state-stable", "state-new", "top");
+          node.classList.add(`state-${item.state}`);
+          if (i < 3) node.classList.add("top");
+
+          node.querySelector(".label").textContent = item.term;
+          node.querySelector(".arrow").textContent = stateArrow(item.state);
+          node.style.fontSize = `${fontSize(item.score, minW, maxW)}px`;
+          node.style.opacity = String(0.56 + (maxW === minW ? 0.36 : ((item.score - minW) / (maxW - minW)) * 0.4));
+          node.style.color = termTone(i);
           node.style.order = String(i);
+
+          prevWeights.set(item.term, item.score);
         });
 
         if (fragment.childNodes.length) cloud.appendChild(fragment);
       }
 
-      function renderRank(terms) {
+      function renderRank(termObjects) {
         rank.innerHTML = "";
-        terms.slice(0, 12).forEach(([term, raw], i) => {
+        termObjects.slice(0, 12).forEach((item, i) => {
+          const klass = item.state === "rising" ? "up" : item.state === "fading" ? "down" : "flat";
+          const symbol = item.state === "rising" ? "↑" : item.state === "fading" ? "↓" : "→";
+          const label = `${symbol}${item.score.toFixed(2)}`;
           const li = document.createElement("li");
-          li.innerHTML = `<span class="idx">${i + 1}</span><span>${term}</span><span class="weight">${(Number(raw) || 0).toFixed(2)}</span>`;
+          li.innerHTML = `<span class="idx">${i + 1}</span><span>${item.term}</span><span class="weight">${item.score.toFixed(2)}</span><span class="delta ${klass}">${label}</span>`;
           rank.appendChild(li);
         });
       }
 
-      function updateState(payload, stale, ok) {
+      function updateState(payload, stale, ok, stats) {
         const ts = payload.ts ? new Date(payload.ts * 1000) : null;
+        const updatedText = ts ? ts.toLocaleTimeString() : "--";
+        const windowText = `${payload.window_sec ?? "?"}s`;
+        const topKText = `${payload.top_k ?? "?"}`;
+
         chipState.textContent = stale ? "Stale" : "Live";
         chipState.className = stale ? "chip stale" : "chip live";
-        chipUpdated.textContent = `Updated ${ts ? ts.toLocaleTimeString() : "--"}`;
+        chipUpdated.textContent = `Updated ${updatedText}`;
         chipWindow.textContent = `Window ${payload.window_sec ?? "?"}s · Top ${payload.top_k ?? "?"}`;
         httpState.textContent = ok ? "ok" : "error";
-        termCount.textContent = String(Array.isArray(payload.terms) ? payload.terms.length : 0);
+        termCount.textContent = String(stats.conceptCount);
+
+        miniConceptCount.textContent = String(stats.conceptCount);
+        miniNewCount.textContent = String(stats.new);
+        miniRiseCount.textContent = String(stats.rising);
+        miniStableCount.textContent = String(stats.stable);
+        miniFadeCount.textContent = String(stats.fading);
+        miniUpdated.textContent = updatedText;
+        miniWindow.textContent = windowText;
+        miniTopK.textContent = topKText;
+
+        if (stats.hasSource) {
+          sourceList.classList.add("active");
+          sourceFinal.textContent = String(stats.sources.final);
+          sourcePartial.textContent = String(stats.sources.partial);
+          sourceLlm.textContent = String(stats.sources.llm);
+          sourceMixed.textContent = String(stats.sources.mixed);
+        } else {
+          sourceList.classList.remove("active");
+        }
       }
 
       async function refresh() {
@@ -278,12 +737,35 @@
           const res = await fetch(`/terms?t=${Date.now()}`, { cache: "no-store" });
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const payload = await res.json();
-          const stale = !payload.ts || (Date.now() - payload.ts * 1000 > 7000);
-          renderCloud(Array.isArray(payload.terms) ? payload.terms : []);
-          renderRank(Array.isArray(payload.terms) ? payload.terms : []);
-          updateState(payload, stale, true);
+          const rawTerms = Array.isArray(payload.terms) ? payload.terms : [];
+          const termObjects = rawTerms.map((entry, idx) => normalizeTerm(entry, idx)).filter((item) => item.term);
+          termObjects.forEach((item) => {
+            item.state = resolveState(item);
+          });
+          const stale = !payload.ts || Date.now() - payload.ts * 1000 > 7000;
+          const stats = aggregateStats(termObjects);
+          renderCloud(termObjects);
+          renderRank(termObjects);
+          riseCount.textContent = String(stats.rising);
+          flatCount.textContent = String(stats.stable);
+          fallCount.textContent = String(stats.fading);
+          updateState(payload, stale, true, stats);
         } catch (_) {
-          updateState(emptyPayload, true, false);
+          const emptyStats = {
+            conceptCount: 0,
+            new: 0,
+            rising: 0,
+            stable: 0,
+            fading: 0,
+            sources: { final: 0, partial: 0, llm: 0, mixed: 0 },
+            hasSource: false,
+          };
+          updateState(emptyPayload, true, false, emptyStats);
+          riseCount.textContent = "0";
+          flatCount.textContent = "0";
+          fallCount.textContent = "0";
+          cloud.innerHTML = '<p class="empty">Connection issue. Retrying...</p>';
+          rank.innerHTML = "";
         }
       }
 
