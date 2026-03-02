@@ -32,6 +32,8 @@ Scopes used in this project:
 - `cli`: command entrypoint, flags, terminal output behavior
 - `asr`: speech backend integration (macOS Speech Framework)
 - `context`: buffering, tokenization, top-terms computation
+- `lm`: language model scoring and local LLM reranking
+- `web`: HTTP server and word cloud UI
 - `docs`: README/spec/troubleshooting docs
 - `infra`: local workflow files (e.g., Makefile)
 - `scaffold`: initial project structure/bootstrap

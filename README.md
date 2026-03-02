@@ -1,4 +1,31 @@
-# CotVis Real-time ASR MVP
+# CotVis — Chain-of-Thought Visualization
+
+## Ultimate Goal
+
+When a person speaks, their ideas do not arrive all at once — they unfold, shift, and build on each other over time. CotVis makes that process visible to an audience in real time.
+
+The ultimate goal is a **standalone tool that visualizes the live chain of thought of a human speaker** — not just which topics are present, but how concepts emerge, gain weight, fade, and connect as the talk or conversation progresses. An audience watching the visualization should be able to follow the arc of the speaker's thinking without reading a transcript.
+
+This goes beyond a static word cloud. The envisioned end state is a display that communicates:
+
+- **What** the speaker is currently focused on
+- **How** the focus has shifted since they began
+- **Which concepts are rising or fading** in the current flow of speech
+
+## Roadmap
+
+| Phase | Focus | Delivers |
+|---|---|---|
+| **1 — Signal correctness** | Fix stable-text diff logic; add deterministic replay tests | Trustworthy term weights as foundation for everything above |
+| **2 — Concept state model** | Introduce per-term history: score, velocity, age, source | Backend knows whether each concept is new, rising, stable, or fading |
+| **3 — Concept quality** | Move beyond word frequency: phrase chunking, named entities | The right concepts are tracked, not just the most frequent words |
+| **4 — Shift & connection detection** | Co-occurrence graph; structured events (`focus_changed`, `concept_rising`, `concept_fading`) | Backend emits semantic events the UI can act on directly |
+| **5 — Flow visualization** | 3-panel UI: current focus + trend timeline + concept-link graph; push transport (SSE/WebSocket) | Audience can see *what*, *how*, and *which* concepts are moving |
+| **6 — Evaluation & hardening** | Replay benchmark set; measurable targets for latency, trend stability, false shift rate | Demonstrated, reliable quality ahead of live use |
+
+Productization (config profiles, export, cross-platform backend) is deferred until after Phase 6.
+
+## Current Stage (MVP)
 
 This repository hosts an MVP for:
 
@@ -70,6 +97,18 @@ Useful controls:
 - `--llm-top-k` (default 30): max LLM terms
 - `--llm-ctx` (default 2048): context size for llama.cpp
 
+Optional local path management (`.env.local`, untracked):
+
+```bash
+cat > .env.local <<'EOF'
+LLM_MODEL_PATH=/path/to/model.gguf
+EOF
+set -a; source .env.local; set +a
+make test-nlp PYTHON=python3.11 ARGS="--llm-model $LLM_MODEL_PATH --llm-primary --open-browser"
+```
+- `--llm-max-tokens` (default 420): max tokens in LLM response
+- `--llm-primary` / `--no-llm-primary` (default on): when enabled, LLM scores replace rather than augment the frequency-based ranking
+
 ## Run With Live Word Cloud
 
 ```bash
@@ -120,7 +159,7 @@ This creates `examples/sample.wav` locally (not committed).
 
 ## Two-Part Testing
 
-1) ASR test (audio -> transcript):
+1) Demo / ASR smoke test (starts server, plays sample audio via mic loopback, prints output):
 
 ```bash
 make test-asr PYTHON=python3.11
@@ -176,11 +215,16 @@ Then re-run `make run`.
 `Failed to start backend: No audio input device found`
 - Connect/enable a microphone and verify system input device settings.
 
-## Planned Package Layout
+## Package Layout
 
-- `src/realtime_asr/events.py`: event dataclasses
-- `src/realtime_asr/asr_backend/base.py`: backend interface
-- `src/realtime_asr/asr_backend/mac_speech.py`: macOS streaming backend
-- `src/realtime_asr/context/tokenizer.py`: tokenization + stopwords
-- `src/realtime_asr/context/manager.py`: stable/ephemeral context and TopTerms
-- `src/realtime_asr/cli.py`: runtime entrypoint
+- `src/realtime_asr/events.py` — `TranscriptEvent` and `TopTermsEvent` dataclasses
+- `src/realtime_asr/cli.py` — main entrypoint and run loop
+- `src/realtime_asr/simulate_transcript.py` — mic-free simulation mode from a text file
+- `src/realtime_asr/asr_backend/base.py` — backend interface
+- `src/realtime_asr/asr_backend/mac_speech.py` — macOS Speech Framework streaming backend
+- `src/realtime_asr/context/tokenizer.py` — tokenization and stopwords (EN + ZH)
+- `src/realtime_asr/context/manager.py` — rolling context window and TopTerms computation
+- `src/realtime_asr/lm/scorer.py` — Zipf-frequency downweighting and bigram phrase scoring
+- `src/realtime_asr/lm/llm_reranker.py` — optional local GGUF model reranking
+- `src/realtime_asr/web/server.py` — HTTP server serving `/terms` JSON and static UI
+- `src/realtime_asr/web/static/` — word cloud HTML pages
