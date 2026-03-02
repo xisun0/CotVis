@@ -5,6 +5,9 @@ import re
 from collections import deque
 from threading import Lock
 
+from realtime_asr.context.concept_registry import ConceptRegistry
+from realtime_asr.context.concept_tracker import ConceptTracker
+from realtime_asr.context.lane_assigner import LaneAssigner
 from realtime_asr.context.tokenizer import count_tokens
 from realtime_asr.events import TopTermsEvent, TranscriptEvent
 from realtime_asr.lm import LanguageModelScorer
@@ -50,6 +53,11 @@ class ContextManager:
         self._enable_phrase_scoring = enable_phrase_scoring
         self._last_llm_ts = 0.0
         self._llm_cache: dict[str, float] = {}
+        self._snapshot_count = 0
+
+        self.concept_registry = ConceptRegistry()
+        self.lane_assigner = LaneAssigner()
+        self.concept_tracker = ConceptTracker()
 
     def on_event(self, event: TranscriptEvent) -> None:
         text = event.text.strip()
@@ -129,13 +137,54 @@ class ContextManager:
             for term, s in llm_cache.items():
                 merged[term] = merged.get(term, 0.0) + (s * self._llm_weight)
 
+        self._snapshot_count += 1
         top_terms = sorted(merged.items(), key=lambda item: item[1], reverse=True)[: self.top_k]
+
+        id_to_score: dict[str, float] = {}
+        for raw_term, score in merged.items():
+            cid = self.concept_registry.register(raw_term)
+            if not cid:
+                continue
+            id_to_score[cid] = id_to_score.get(cid, 0.0) + float(score)
+
+        concept_ids = list(id_to_score.keys())
+        self.lane_assigner.update_cooc(concept_ids)
+        for cid in concept_ids:
+            self.lane_assigner.assign(cid, self._snapshot_count)
+        self.concept_tracker.set_ephemeral_text(self.ephemeral_text)
+        focus, phase, transition = self.concept_tracker.update(
+            id_to_score=id_to_score,
+            now_ts=now,
+            snapshot_count=self._snapshot_count,
+        )
+        focus.dominant_display = self.concept_registry.display(focus.dominant_id)
+        focus.distribution = [
+            (cid, self.concept_registry.display(cid), weight)
+            for cid, _, weight in focus.distribution
+        ]
+        if transition is not None and transition.bridge is not None:
+            transition.bridge.display = self.concept_registry.display(transition.bridge.concept_id)
+
+        phase_lane_indices = [
+            self.lane_assigner.assign(cid, self._snapshot_count)
+            for cid, _, _ in focus.distribution
+            if cid
+        ]
+        if phase_lane_indices:
+            phase.lane_min = min(phase_lane_indices)
+            phase.lane_max = max(phase_lane_indices)
+        else:
+            phase.lane_min = 0
+            phase.lane_max = 0
 
         return TopTermsEvent(
             ts=now,
             window_sec=self.final_window_sec,
             top_k=self.top_k,
             terms=top_terms,
+            focus=focus,
+            phase=phase,
+            transition=transition,
         )
 
     def _extract_new_stable_text(self, full_text: str) -> str:
