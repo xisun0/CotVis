@@ -159,6 +159,12 @@ This creates `examples/sample.wav` locally (not committed).
 
 ## Two-Part Testing
 
+Deterministic local regression tests:
+
+```bash
+make test PYTHON=python3.11
+```
+
 1) Demo / ASR smoke test (starts server, plays sample audio via mic loopback, prints output):
 
 ```bash

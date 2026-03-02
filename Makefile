@@ -3,7 +3,7 @@ ARGS ?=
 DEMO_PORT ?= 8765
 DEMO_TAIL_SEC ?= 8
 
-.PHONY: setup setup-llm run run-web demo test-asr test-nlp sample-wav setup-local commit-help
+.PHONY: setup setup-llm run run-web demo test test-asr test-nlp sample-wav setup-local commit-help
 
 setup:
 	$(PYTHON) -m pip install --upgrade pip
@@ -35,6 +35,9 @@ demo: sample-wav
 	tail -n 40 /tmp/cotvis_demo.log
 
 test-asr: demo
+
+test:
+	$(PYTHON) -m pytest tests/test_context_manager.py
 
 test-nlp:
 	$(PYTHON) -m realtime_asr.simulate_transcript --serve-ui --open-browser $(ARGS)
