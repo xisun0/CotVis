@@ -13,17 +13,13 @@
         --muted: #5f6d7a;
         --card: #fffdf8d6;
         --line: #cabd9f;
-        --accent-a: #165e63;
-        --accent-b: #a2411a;
         --rise: #1d7f4f;
         --fall: #b64b3f;
         --stable: #6e7c88;
         --new: #8f6513;
       }
 
-      * {
-        box-sizing: border-box;
-      }
+      * { box-sizing: border-box; }
 
       body {
         margin: 0;
@@ -49,12 +45,12 @@
       }
 
       .shell {
-        max-width: 1280px;
+        max-width: 1540px;
         margin: 20px auto;
-        padding: 14px;
+        padding: 14px 20px;
         display: grid;
         gap: 14px;
-        grid-template-columns: minmax(0, 2.35fr) minmax(300px, 1fr);
+        grid-template-columns: minmax(0, 2.75fr) minmax(250px, 0.85fr);
       }
 
       .card {
@@ -121,48 +117,75 @@
         min-height: 70vh;
         padding: 18px;
         position: relative;
-        overflow: hidden;
-      }
-
-      .cloud-wrap::before,
-      .cloud-wrap::after {
-        content: "";
-        position: absolute;
-        border-radius: 999px;
-        pointer-events: none;
-      }
-
-      .cloud-wrap::before {
-        width: 340px;
-        height: 340px;
-        right: -90px;
-        top: -90px;
-        background: radial-gradient(circle, #165e6312 0%, #165e6300 70%);
-      }
-
-      .cloud-wrap::after {
-        width: 300px;
-        height: 300px;
-        left: -70px;
-        bottom: -70px;
-        background: radial-gradient(circle, #a2411a12 0%, #a2411a00 70%);
+        overflow: visible;
       }
 
       .cloud-layout {
         position: relative;
         z-index: 1;
         display: grid;
-        grid-template-columns: minmax(0, 1fr) 220px;
+        grid-template-columns: minmax(0, 1fr) 196px;
         gap: 12px;
         align-items: start;
       }
 
-      .cloud {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px 12px;
-        align-content: flex-start;
-        min-height: 55vh;
+      .cloud-stage {
+        position: relative;
+        min-height: 60vh;
+        height: clamp(420px, 62vh, 760px);
+        border: 1px dashed #00000014;
+        border-radius: 14px;
+        background:
+          radial-gradient(circle at 50% 48%, #fffdf8db 0%, #fffef894 50%, #fffef84a 72%, #fffef814 100%);
+        overflow: visible;
+      }
+
+      .cloud-canvas {
+        position: absolute;
+        inset: 0;
+      }
+
+      .term {
+        position: absolute;
+        line-height: 1;
+        white-space: nowrap;
+        font-weight: 600;
+        letter-spacing: 0.008em;
+        transform-origin: center center;
+        will-change: left, top, font-size, opacity;
+        transition:
+          left 520ms cubic-bezier(.22,.61,.36,1),
+          top 520ms cubic-bezier(.22,.61,.36,1),
+          font-size 520ms cubic-bezier(.22,.61,.36,1),
+          opacity 360ms ease,
+          color 360ms ease;
+      }
+
+      .term.leaving {
+        opacity: 0 !important;
+        pointer-events: none;
+      }
+
+      .term.top {
+        font-weight: 700;
+      }
+
+      .term .arrow {
+        margin-left: 5px;
+        font-size: 0.34em;
+        opacity: 0.55;
+        vertical-align: super;
+      }
+
+      .term.state-rising { color: color-mix(in oklab, var(--rise), #12212b 22%); }
+      .term.state-fading { color: color-mix(in oklab, var(--fall), #2a1e1a 20%); }
+      .term.state-stable { color: color-mix(in oklab, var(--stable), #2a3139 20%); }
+      .term.state-new { color: color-mix(in oklab, var(--new), #2a2320 16%); }
+
+      .empty {
+        margin: 12px 0 0;
+        font-family: "Avenir Next", "Trebuchet MS", sans-serif;
+        color: var(--muted);
       }
 
       .mini-stats {
@@ -191,133 +214,10 @@
         font-size: 0.82rem;
       }
 
-      .mini-row:last-child {
-        border-bottom: 0;
-      }
-
-      .mini-muted {
-        color: var(--muted);
-      }
-
-      .source-list {
-        display: none;
-      }
-
-      .source-list.active {
-        display: block;
-      }
-
-      .term {
-        position: relative;
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        line-height: 1;
-        border: 1px solid #00000016;
-        border-radius: 999px;
-        padding: 5px 9px;
-        background: #ffffffc2;
-        transition:
-          font-size 300ms cubic-bezier(.2,.8,.2,1),
-          opacity 300ms ease,
-          transform 300ms ease,
-          background-color 300ms ease,
-          color 300ms ease,
-          border-color 300ms ease;
-        will-change: transform, font-size, opacity;
-      }
-
-      .term .dot {
-        width: 6px;
-        height: 6px;
-        border-radius: 999px;
-        background: var(--stable);
-        opacity: 0.9;
-        flex: 0 0 auto;
-      }
-
-      .term .label {
-        font-weight: 700;
-      }
-
-      .term .arrow {
-        position: absolute;
-        right: 5px;
-        top: 2px;
-        font-size: 0.55em;
-        color: color-mix(in oklab, var(--stable), #000 10%);
-        opacity: 0.72;
-        font-family: "Avenir Next", "Trebuchet MS", sans-serif;
-      }
-
-      .term.state-rising {
-        border-color: color-mix(in oklab, var(--rise), white 66%);
-        background: color-mix(in oklab, var(--rise), white 93%);
-      }
-
-      .term.state-rising .dot {
-        background: var(--rise);
-      }
-
-      .term.state-rising .arrow {
-        color: var(--rise);
-      }
-
-      .term.state-fading {
-        border-color: color-mix(in oklab, var(--fall), white 66%);
-        background: color-mix(in oklab, var(--fall), white 94%);
-      }
-
-      .term.state-fading .dot {
-        background: var(--fall);
-      }
-
-      .term.state-fading .arrow {
-        color: var(--fall);
-      }
-
-      .term.state-stable {
-        border-color: color-mix(in oklab, var(--stable), white 78%);
-      }
-
-      .term.state-stable .dot {
-        background: var(--stable);
-      }
-
-      .term.state-new {
-        border-color: color-mix(in oklab, var(--new), white 70%);
-        background: color-mix(in oklab, var(--new), white 94%);
-      }
-
-      .term.state-new .dot {
-        background: var(--new);
-      }
-
-      .term.entering {
-        transform: translateY(8px) scale(0.96);
-        opacity: 0;
-      }
-
-      .term.removing {
-        transform: translateY(-7px) scale(0.95);
-        opacity: 0;
-      }
-
-      .term.top {
-        transform: scale(1.2);
-        transform-origin: left center;
-      }
-
-      .term.top.term.removing,
-      .term.top.term.entering {
-        transform-origin: left center;
-      }
-
-      .empty {
-        margin: 12px 0 0;
-        font-family: "Avenir Next", "Trebuchet MS", sans-serif;
-        color: var(--muted);
-      }
+      .mini-row:last-child { border-bottom: 0; }
+      .mini-muted { color: var(--muted); }
+      .source-list { display: none; }
+      .source-list.active { display: block; }
 
       .side {
         padding: 14px;
@@ -408,44 +308,22 @@
         font-size: 0.8rem;
       }
 
-      .delta.up {
-        color: var(--rise);
-      }
-
-      .delta.down {
-        color: var(--fall);
-      }
-
-      .delta.flat {
-        color: var(--muted);
-      }
+      .delta.up { color: var(--rise); }
+      .delta.down { color: var(--fall); }
+      .delta.flat { color: var(--muted); }
 
       @media (max-width: 1080px) {
-        .shell {
-          grid-template-columns: 1fr;
-        }
-
-        .cloud-wrap {
-          min-height: 56vh;
-        }
-
-        .main-head {
-          flex-direction: column;
-          align-items: flex-start;
-        }
-
-        .chips {
-          justify-content: flex-start;
-        }
+        .shell { grid-template-columns: 1fr; }
+        .cloud-wrap { min-height: 56vh; }
+        .main-head { flex-direction: column; align-items: flex-start; }
+        .chips { justify-content: flex-start; }
       }
 
       @media (max-width: 760px) {
-        .cloud-layout {
-          grid-template-columns: 1fr;
-        }
-
-        .cloud {
-          min-height: 40vh;
+        .cloud-layout { grid-template-columns: 1fr; }
+        .cloud-stage {
+          min-height: 44vh;
+          height: clamp(360px, 50vh, 560px);
         }
       }
     </style>
@@ -466,7 +344,9 @@
         </header>
         <div class="cloud-wrap">
           <div class="cloud-layout">
-            <div id="cloud" class="cloud"></div>
+            <div class="cloud-stage">
+              <div id="cloudCanvas" class="cloud-canvas"></div>
+            </div>
             <aside class="mini-stats">
               <h3>Live Stats</h3>
               <div class="mini-row"><span>Concept count</span><span id="miniConceptCount">0</span></div>
@@ -511,7 +391,7 @@
     </div>
 
     <script>
-      const cloud = document.getElementById("cloud");
+      const cloudCanvas = document.getElementById("cloudCanvas");
       const rank = document.getElementById("rank");
       const chipState = document.getElementById("chipState");
       const chipUpdated = document.getElementById("chipUpdated");
@@ -534,34 +414,32 @@
       const sourcePartial = document.getElementById("sourcePartial");
       const sourceLlm = document.getElementById("sourceLlm");
       const sourceMixed = document.getElementById("sourceMixed");
-
-      const nodeMap = new Map();
-      const prevWeights = new Map();
-      const pendingRemoval = new Set();
+      const termNodeMap = new Map();
+      const termBoxMap = new Map();
+      const prevScoreMap = new Map();
+      let hasMovementBaseline = false;
+      let lastTermObjects = [];
+      let lastPayloadMeta = { ts: 0, window_sec: "?", top_k: "?" };
+      let hasSuccessfulPayload = false;
 
       function asNumber(value) {
         const n = Number(value);
         return Number.isFinite(n) ? n : 0;
       }
 
-      function termTone(index) {
-        if (index % 5 === 0) return "color-mix(in oklab, var(--accent-a), black 8%)";
-        if (index % 3 === 0) return "color-mix(in oklab, var(--accent-b), black 2%)";
-        return "var(--ink-0)";
+      function hashString(input) {
+        let h = 2166136261;
+        for (let i = 0; i < input.length; i += 1) {
+          h ^= input.charCodeAt(i);
+          h += (h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24);
+        }
+        return Math.abs(h >>> 0);
       }
 
       function normalizeTerm(entry, idx) {
         if (Array.isArray(entry)) {
-          return {
-            term: String(entry[0] ?? "").trim(),
-            score: asNumber(entry[1]),
-            state: null,
-            velocity: null,
-            source: null,
-            rank: idx + 1,
-          };
+          return { term: String(entry[0] ?? "").trim(), score: asNumber(entry[1]), state: null, velocity: null, source: null, rank: idx + 1 };
         }
-
         if (entry && typeof entry === "object") {
           return {
             term: String(entry.term ?? entry.label ?? "").trim(),
@@ -572,23 +450,42 @@
             rank: asNumber(entry.rank) || idx + 1,
           };
         }
-
         return { term: "", score: 0, state: null, velocity: null, source: null, rank: idx + 1 };
       }
 
-      function resolveState(termObj) {
-        const raw = termObj.state ? String(termObj.state).toLowerCase() : "";
-        if (raw === "rising") return "rising";
-        if (raw === "fading") return "fading";
-        if (raw === "new") return "new";
+      function resolveState(item) {
+        const raw = item.state ? String(item.state).toLowerCase() : "";
+        if (raw === "rising" || raw === "fading" || raw === "new") return raw;
         if (raw === "stable" || raw === "flat") return "stable";
-
-        const velocity = asNumber(termObj.velocity);
-        if (velocity !== 0) {
-          if (velocity > 0.09) return "rising";
-          if (velocity < -0.09) return "fading";
-        }
+        const v = asNumber(item.velocity);
+        if (v > 0.09) return "rising";
+        if (v < -0.09) return "fading";
         return "stable";
+      }
+
+      function enrichMovementState(termObjects) {
+        const nextScoreMap = new Map();
+        termObjects.forEach((item) => {
+          const hasExplicitState = item.state !== null && item.state !== undefined && String(item.state).trim() !== "";
+          const hasExplicitVelocity = Number.isFinite(asNumber(item.velocity)) && item.velocity !== null && item.velocity !== undefined;
+          if (!hasExplicitState && !hasExplicitVelocity) {
+            const prevScore = prevScoreMap.get(item.term);
+            if (!hasMovementBaseline || prevScore === undefined) {
+              item.state = hasMovementBaseline ? "new" : "stable";
+            } else {
+              const delta = item.score - prevScore;
+              const threshold = Math.max(0.15, Math.abs(prevScore) * 0.12);
+              if (delta > threshold) item.state = "rising";
+              else if (delta < -threshold) item.state = "fading";
+              else item.state = "stable";
+            }
+          }
+          item.state = resolveState(item);
+          nextScoreMap.set(item.term, item.score);
+        });
+        prevScoreMap.clear();
+        for (const [term, score] of nextScoreMap.entries()) prevScoreMap.set(term, score);
+        hasMovementBaseline = true;
       }
 
       function stateArrow(state) {
@@ -598,10 +495,64 @@
         return "→";
       }
 
-      function fontSize(weight, minW, maxW) {
-        if (maxW <= minW) return 20;
+      function colorForIndex(state, idx) {
+        if (state === "rising") return "color-mix(in oklab, var(--rise), #12212b 22%)";
+        if (state === "fading") return "color-mix(in oklab, var(--fall), #2a1e1a 20%)";
+        if (state === "new") return "color-mix(in oklab, var(--new), #2a2320 16%)";
+        if (idx % 5 === 0) return "color-mix(in oklab, var(--stable), #23303b 12%)";
+        if (idx % 3 === 0) return "color-mix(in oklab, var(--stable), #2f3742 20%)";
+        return "color-mix(in oklab, var(--stable), #1f252b 24%)";
+      }
+
+      function fontSize(weight, minW, maxW, idx) {
+        if (maxW <= minW) return idx < 3 ? 92 : 26;
         const t = (weight - minW) / (maxW - minW);
-        return Math.round(16 + t * 36);
+        const base = 17 + t * 66;
+        return Math.round(idx < 3 ? base * 1.2 : base);
+      }
+
+      function overlaps(a, b, pad = 6) {
+        return !(
+          a.x + a.w + pad < b.x ||
+          b.x + b.w + pad < a.x ||
+          a.y + a.h + pad < b.y ||
+          b.y + b.h + pad < a.y
+        );
+      }
+
+      function overlapArea(a, b) {
+        const x1 = Math.max(a.x, b.x);
+        const y1 = Math.max(a.y, b.y);
+        const x2 = Math.min(a.x + a.w, b.x + b.w);
+        const y2 = Math.min(a.y + a.h, b.y + b.h);
+        if (x2 <= x1 || y2 <= y1) return 0;
+        return (x2 - x1) * (y2 - y1);
+      }
+
+      function inBounds(box, w, h, margin = 6) {
+        return box.x >= margin && box.y >= margin && (box.x + box.w) <= (w - margin) && (box.y + box.h) <= (h - margin);
+      }
+
+      function buildTermNode(item, idx, sizePx) {
+        const node = document.createElement("span");
+        node.className = `term state-${item.state}${idx < 3 ? " top" : ""}`;
+        node.innerHTML = `<span class="label"></span><span class="arrow">${stateArrow(item.state)}</span>`;
+        node.querySelector(".label").textContent = item.term;
+        node.style.fontSize = `${sizePx}px`;
+        node.style.color = colorForIndex(item.state, idx);
+        node.style.opacity = "0";
+        return node;
+      }
+
+      function measureTermSize(item, idx, sizePx) {
+        const probe = buildTermNode(item, idx, sizePx);
+        probe.style.visibility = "hidden";
+        probe.style.left = "-10000px";
+        probe.style.top = "-10000px";
+        cloudCanvas.appendChild(probe);
+        const rect = probe.getBoundingClientRect();
+        probe.remove();
+        return { w: rect.width, h: rect.height };
       }
 
       function aggregateStats(terms) {
@@ -614,14 +565,9 @@
           sources: { final: 0, partial: 0, llm: 0, mixed: 0 },
           hasSource: false,
         };
-
         terms.forEach((item) => {
-          if (item.state in stats) {
-            stats[item.state] += 1;
-          } else {
-            stats.stable += 1;
-          }
-
+          if (item.state in stats) stats[item.state] += 1;
+          else stats.stable += 1;
           const src = item.source ? String(item.source).toLowerCase() : "";
           if (src && src in stats.sources) {
             stats.sources[src] += 1;
@@ -631,59 +577,152 @@
         return stats;
       }
 
-      function renderCloud(termObjects) {
-        const weights = termObjects.map((item) => item.score);
-        const minW = weights.length ? Math.min(...weights) : 0;
-        const maxW = weights.length ? Math.max(...weights) : 1;
-        const nextKeys = new Set(termObjects.map((item) => item.term));
+      function computeWordLayout(terms) {
+        if (!terms.length) return [];
+        const SAFE_MARGIN = 24;
+        const MAX_ATTEMPTS = 500;
+        const MIN_FONT_PX = 14;
+        const SHRINK_STEPS = [1, 0.92, 0.85, 0.78];
 
-        for (const [term, node] of nodeMap.entries()) {
-          if (!nextKeys.has(term) && !pendingRemoval.has(term)) {
-            pendingRemoval.add(term);
-            node.classList.add("removing");
-            setTimeout(() => {
-              node.remove();
-              nodeMap.delete(term);
-              pendingRemoval.delete(term);
-            }, 300);
+        const stageRect = cloudCanvas.getBoundingClientRect();
+        const stageW = Math.max(260, stageRect.width);
+        const stageH = Math.max(220, stageRect.height);
+        const cx = stageW / 2;
+        const cy = stageH / 2;
+
+        const scores = terms.map((t) => t.score);
+        const minW = Math.min(...scores);
+        const maxW = Math.max(...scores);
+        const placed = [];
+        const layouts = [];
+
+        terms.forEach((item, idx) => {
+          const baseSize = fontSize(item.score, minW, maxW, idx);
+          const seed = hashString(`${item.term}-${idx}`);
+          const startAngle = (seed % 360) * (Math.PI / 180);
+          const ellipseY = 0.72;
+          const prev = termBoxMap.get(item.term) || null;
+
+          let placedBox = null;
+          let placedFontPx = Math.max(MIN_FONT_PX, baseSize);
+
+          for (let s = 0; s < SHRINK_STEPS.length && !placedBox; s += 1) {
+            const fontPx = Math.max(MIN_FONT_PX, Math.round(baseSize * SHRINK_STEPS[s]));
+            const measured = measureTermSize(item, idx, fontPx);
+            const nodeW = measured.w;
+            const nodeH = measured.h;
+            const hasOverlap = (candidate) => {
+              for (let j = 0; j < placed.length; j += 1) {
+                if (overlaps(candidate, placed[j], 1)) return true;
+              }
+              return false;
+            };
+            const fits = (candidate) => inBounds(candidate, stageW, stageH, SAFE_MARGIN) && !hasOverlap(candidate);
+
+            if (prev) {
+              const anchored = {
+                x: Math.max(SAFE_MARGIN, Math.min(stageW - nodeW - SAFE_MARGIN, prev.x + (prev.w - nodeW) / 2)),
+                y: Math.max(SAFE_MARGIN, Math.min(stageH - nodeH - SAFE_MARGIN, prev.y + (prev.h - nodeH) / 2)),
+                w: nodeW,
+                h: nodeH,
+              };
+              if (fits(anchored)) {
+                placedBox = anchored;
+                placedFontPx = fontPx;
+                break;
+              }
+            }
+
+            for (let t = 0; t < MAX_ATTEMPTS; t += 1) {
+              const angle = startAngle + t * 0.58;
+              const baseRadius = 14 + Math.sqrt(idx) * 24;
+              const radius = baseRadius + t * 4.8;
+              const anchorX = prev ? prev.x + prev.w / 2 : cx;
+              const anchorY = prev ? prev.y + prev.h / 2 : cy;
+              const candidate = {
+                x: anchorX + Math.cos(angle) * radius - nodeW / 2,
+                y: anchorY + Math.sin(angle) * radius * ellipseY - nodeH / 2,
+                w: nodeW,
+                h: nodeH,
+              };
+              if (!fits(candidate)) continue;
+              placedBox = candidate;
+              placedFontPx = fontPx;
+              break;
+            }
           }
-        }
 
-        if (!termObjects.length) {
-          cloud.innerHTML = '<p class="empty">Listening... start speaking to populate concept signals.</p>';
-          nodeMap.clear();
-          pendingRemoval.clear();
+          if (!placedBox) {
+            termBoxMap.delete(item.term);
+            return;
+          }
+
+          placed.push(placedBox);
+          termBoxMap.set(item.term, placedBox);
+          layouts.push({
+            item,
+            idx,
+            x: placedBox.x,
+            y: placedBox.y,
+            fontPx: placedFontPx,
+            opacity: idx < 3 ? 0.96 : 0.78,
+          });
+        });
+        return layouts;
+      }
+
+      function layoutWords(terms) {
+        if (!terms.length) {
+          for (const [, node] of termNodeMap.entries()) {
+            node.remove();
+          }
+          termNodeMap.clear();
+          termBoxMap.clear();
+          cloudCanvas.innerHTML = '<p class="empty">Listening... start speaking to populate concept signals.</p>';
           return;
         }
-        if (cloud.querySelector(".empty")) cloud.innerHTML = "";
 
-        const fragment = document.createDocumentFragment();
-        termObjects.forEach((item, i) => {
-          let node = nodeMap.get(item.term);
-          if (!node) {
-            node = document.createElement("span");
-            node.className = "term entering";
-            node.innerHTML = '<span class="dot"></span><span class="label"></span><span class="arrow"></span>';
-            nodeMap.set(item.term, node);
-            fragment.appendChild(node);
-            requestAnimationFrame(() => node.classList.remove("entering"));
+        const emptyNode = cloudCanvas.querySelector(".empty");
+        if (emptyNode) emptyNode.remove();
+
+        const layouts = computeWordLayout(terms);
+        const nextKeys = new Set(layouts.map((entry) => entry.item.term));
+
+        for (const [term, node] of termNodeMap.entries()) {
+          if (!nextKeys.has(term)) {
+            node.classList.add("leaving");
+            setTimeout(() => {
+              if (termNodeMap.get(term) === node) {
+                node.remove();
+                termNodeMap.delete(term);
+                termBoxMap.delete(term);
+              }
+            }, 520);
           }
+        }
 
-          node.classList.remove("state-rising", "state-fading", "state-stable", "state-new", "top");
-          node.classList.add(`state-${item.state}`);
-          if (i < 3) node.classList.add("top");
-
+        layouts.forEach((entry) => {
+          const { item, idx, x, y, fontPx, opacity } = entry;
+          let node = termNodeMap.get(item.term);
+          if (!node) {
+            node = buildTermNode(item, idx, fontPx);
+            node.style.opacity = "0";
+            cloudCanvas.appendChild(node);
+            termNodeMap.set(item.term, node);
+          }
+          node.className = `term state-${item.state}${idx < 3 ? " top" : ""}`;
           node.querySelector(".label").textContent = item.term;
           node.querySelector(".arrow").textContent = stateArrow(item.state);
-          node.style.fontSize = `${fontSize(item.score, minW, maxW)}px`;
-          node.style.opacity = String(0.56 + (maxW === minW ? 0.36 : ((item.score - minW) / (maxW - minW)) * 0.4));
-          node.style.color = termTone(i);
-          node.style.order = String(i);
-
-          prevWeights.set(item.term, item.score);
+          node.style.fontSize = `${fontPx}px`;
+          node.style.color = colorForIndex(item.state, idx);
+          node.style.left = `${x}px`;
+          node.style.top = `${y}px`;
+          node.style.zIndex = String(Math.max(1, 1000 - idx));
+          node.classList.remove("leaving");
+          requestAnimationFrame(() => {
+            node.style.opacity = String(opacity);
+          });
         });
-
-        if (fragment.childNodes.length) cloud.appendChild(fragment);
       }
 
       function renderRank(termObjects) {
@@ -701,9 +740,6 @@
       function updateState(payload, stale, ok, stats) {
         const ts = payload.ts ? new Date(payload.ts * 1000) : null;
         const updatedText = ts ? ts.toLocaleTimeString() : "--";
-        const windowText = `${payload.window_sec ?? "?"}s`;
-        const topKText = `${payload.top_k ?? "?"}`;
-
         chipState.textContent = stale ? "Stale" : "Live";
         chipState.className = stale ? "chip stale" : "chip live";
         chipUpdated.textContent = `Updated ${updatedText}`;
@@ -717,8 +753,8 @@
         miniStableCount.textContent = String(stats.stable);
         miniFadeCount.textContent = String(stats.fading);
         miniUpdated.textContent = updatedText;
-        miniWindow.textContent = windowText;
-        miniTopK.textContent = topKText;
+        miniWindow.textContent = `${payload.window_sec ?? "?"}s`;
+        miniTopK.textContent = `${payload.top_k ?? "?"}`;
 
         if (stats.hasSource) {
           sourceList.classList.add("active");
@@ -738,36 +774,62 @@
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const payload = await res.json();
           const rawTerms = Array.isArray(payload.terms) ? payload.terms : [];
-          const termObjects = rawTerms.map((entry, idx) => normalizeTerm(entry, idx)).filter((item) => item.term);
-          termObjects.forEach((item) => {
-            item.state = resolveState(item);
-          });
+          const termObjects = rawTerms.map((entry, idx) => normalizeTerm(entry, idx)).filter((x) => x.term);
+          enrichMovementState(termObjects);
           const stale = !payload.ts || Date.now() - payload.ts * 1000 > 7000;
           const stats = aggregateStats(termObjects);
-          renderCloud(termObjects);
+          lastTermObjects = termObjects.map((item) => ({ ...item }));
+          lastPayloadMeta = {
+            ts: Number.isFinite(payload.ts) ? payload.ts : 0,
+            window_sec: payload.window_sec ?? "?",
+            top_k: payload.top_k ?? "?",
+          };
+          hasSuccessfulPayload = true;
+          layoutWords(termObjects);
           renderRank(termObjects);
           riseCount.textContent = String(stats.rising);
           flatCount.textContent = String(stats.stable);
           fallCount.textContent = String(stats.fading);
           updateState(payload, stale, true, stats);
         } catch (_) {
-          const emptyStats = {
-            conceptCount: 0,
-            new: 0,
-            rising: 0,
-            stable: 0,
-            fading: 0,
-            sources: { final: 0, partial: 0, llm: 0, mixed: 0 },
-            hasSource: false,
-          };
-          updateState(emptyPayload, true, false, emptyStats);
-          riseCount.textContent = "0";
-          flatCount.textContent = "0";
-          fallCount.textContent = "0";
-          cloud.innerHTML = '<p class="empty">Connection issue. Retrying...</p>';
-          rank.innerHTML = "";
+          if (hasSuccessfulPayload && lastTermObjects.length) {
+            const staleStats = aggregateStats(lastTermObjects);
+            const stalePayload = {
+              ts: lastPayloadMeta.ts,
+              window_sec: lastPayloadMeta.window_sec,
+              top_k: lastPayloadMeta.top_k,
+              terms: lastTermObjects,
+            };
+            layoutWords(lastTermObjects);
+            renderRank(lastTermObjects);
+            riseCount.textContent = String(staleStats.rising);
+            flatCount.textContent = String(staleStats.stable);
+            fallCount.textContent = String(staleStats.fading);
+            updateState(stalePayload, true, false, staleStats);
+          } else {
+            const emptyStats = {
+              conceptCount: 0,
+              new: 0,
+              rising: 0,
+              stable: 0,
+              fading: 0,
+              sources: { final: 0, partial: 0, llm: 0, mixed: 0 },
+              hasSource: false,
+            };
+            layoutWords([]);
+            rank.innerHTML = "";
+            riseCount.textContent = "0";
+            flatCount.textContent = "0";
+            fallCount.textContent = "0";
+            updateState(emptyPayload, true, false, emptyStats);
+          }
         }
       }
+
+      window.addEventListener("resize", () => {
+        clearTimeout(window.__cotvisResizeTimer);
+        window.__cotvisResizeTimer = setTimeout(refresh, 120);
+      });
 
       refresh();
       setInterval(refresh, 2000);
