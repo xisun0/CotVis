@@ -106,7 +106,11 @@ def main() -> int:
             "terms": top_terms.terms,
         }
         if web_server is not None:
-            web_server.update(payload)
+            web_server.update(
+                top_terms,
+                lane_assigner=manager.lane_assigner,
+                registry=manager.concept_registry,
+            )
         if args.jsonl:
             print(json.dumps(payload, ensure_ascii=False))
         next_update = now + args.update_interval
