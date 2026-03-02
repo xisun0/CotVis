@@ -58,3 +58,8 @@ For partial progress on an issue, add this line in commit body:
 - One commit should do one clear thing.
 - Avoid mixing refactor + new feature in one commit.
 - If unsure, choose simpler implementation first and leave a TODO.
+
+## Project Memory Reference
+- If available, refer to the Claude-generated project memory file before planning major changes:
+  - `~/.claude/projects/-Users-sxi-SunXi-1-Research-14-CotVis/memory/MEMORY.md`
+- Treat it as supporting context (status/history), not as a source of truth over current code.

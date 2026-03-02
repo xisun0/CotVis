@@ -243,7 +243,7 @@
       const hitLayer = svg.append("g");
 
       let state = null;
-      let transform = d3.zoomIdentity.translate(50, 44).scale(0.85);
+      let transform = d3.zoomIdentity.translate(50, 44).scale(1.5);
       let autoFollow = true;
       let selectedConcept = null;
       let selectedPhase = null;
@@ -276,12 +276,15 @@
 
       function visibleNodes(level) {
         const all = state?.nodes ?? [];
-        if (level === "high") return all;
+        const windowSec = state?.window_sec ?? 60;
+        const cutoff = (state?.ts ?? 0) - windowSec;
+        const windowed = all.filter((n) => n.ts >= cutoff);
+        if (level === "high") return windowed;
         if (level === "mid") {
-          return [...all].sort((a, b) => b.score - a.score).slice(0, 20);
+          return [...windowed].sort((a, b) => b.score - a.score).slice(0, 20);
         }
         const byPhase = new Map();
-        for (const node of all) {
+        for (const node of windowed) {
           const arr = byPhase.get(node.phase_id) ?? [];
           arr.push(node);
           byPhase.set(node.phase_id, arr);
@@ -339,16 +342,26 @@
           }
         }
 
+        // Fix B: one label per concept — latest ts within the window
+        const latestByConceptForLabel = new Map();
+        if (level === "high") {
+          for (const node of nodes) {
+            const prev = latestByConceptForLabel.get(node.id);
+            if (!prev || node.ts > prev.ts) latestByConceptForLabel.set(node.id, node);
+          }
+        }
+
         for (const node of nodes) {
           const x = xOf(node.ts);
           const y = yOf(node.lane_index);
-          const r = Math.max(2.5, Math.sqrt(Math.max(node.score, 0.0001)) * BASE_R * 0.55);
+          // Fix D: radius visible for normalized weights (0.05–0.10 range)
+          const r = Math.max(4, Math.sqrt(Math.max(node.score, 0.0001)) * BASE_R * 2.0);
           const selected = selectedConcept && selectedConcept === node.id;
           nodesCtx.beginPath();
           nodesCtx.fillStyle = selected ? "rgba(191,95,54,0.95)" : "rgba(33,63,98,0.84)";
           nodesCtx.arc(x, y, selected ? r * 1.22 : r, 0, Math.PI * 2);
           nodesCtx.fill();
-          if (level === "high") {
+          if (level === "high" && latestByConceptForLabel.get(node.id) === node) {
             nodesCtx.fillStyle = "rgba(31,42,51,0.86)";
             nodesCtx.font = `${12 / Math.max(transform.k, 0.35)}px Avenir Next, Trebuchet MS, sans-serif`;
             nodesCtx.fillText(node.display, x + r + 3, y - 3);
