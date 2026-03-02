@@ -14,3 +14,7 @@ venv/
 
 # macOS desktop metadata
 .DS_Store
+
+.env.local
+
+.env.local

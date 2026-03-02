@@ -42,6 +42,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--llm-ctx", type=int, default=2048)
     parser.add_argument("--llm-max-tokens", type=int, default=420)
     parser.add_argument("--llm-primary", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--llm-only", action=argparse.BooleanOptionalAction, default=False)
 
     return parser
 
@@ -62,6 +63,8 @@ def main() -> int:
             temperature=0.0,
             chat_format="chatml",
         )
+    if args.llm_only and llm_reranker is None:
+        raise SystemExit("--llm-only requires --llm-model to be set.")
 
     final_window_sec = 0 if args.full_session else args.final_window
 
@@ -73,6 +76,7 @@ def main() -> int:
         llm_interval_sec=args.llm_interval,
         llm_weight=args.llm_weight,
         llm_top_k=args.llm_top_k,
+        llm_only=args.llm_only,
         llm_primary=(args.llm_primary and llm_reranker is not None),
     )
 

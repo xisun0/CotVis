@@ -50,6 +50,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--llm-ctx", type=int, default=2048)
     parser.add_argument("--llm-max-tokens", type=int, default=420)
     parser.add_argument("--llm-primary", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--llm-only", action=argparse.BooleanOptionalAction, default=False)
     return parser
 
 
@@ -68,6 +69,9 @@ def main() -> int:
         except Exception as exc:
             print(f"Failed to initialize local LLM reranker: {exc}", file=sys.stderr)
             return 1
+    if args.llm_only and llm_reranker is None:
+        print("--llm-only requires --llm-model to be set.", file=sys.stderr)
+        return 1
 
     final_window_sec = 0 if args.full_session else args.final_window
 
@@ -79,6 +83,7 @@ def main() -> int:
         llm_interval_sec=args.llm_interval,
         llm_weight=args.llm_weight,
         llm_top_k=args.llm_top_k,
+        llm_only=args.llm_only,
         llm_primary=(args.llm_primary and llm_reranker is not None),
     )
 
@@ -113,10 +118,12 @@ def main() -> int:
     except MacSpeechBackendError as exc:
         print(f"Failed to start backend: {exc}", file=sys.stderr)
         return 1
-    if args.verbose:
-        print("[CLI] Backend started. Waiting for speech...")
-        if args.llm_model:
-            print(f"[CLI] Local LLM rerank enabled: {args.llm_model}")
+        if args.verbose:
+            print("[CLI] Backend started. Waiting for speech...")
+            if args.llm_model:
+                print(f"[CLI] Local LLM rerank enabled: {args.llm_model}")
+            if args.llm_only:
+                print("[CLI] LLM-only mode enabled: base term scoring is disabled.")
 
     try:
         while True:

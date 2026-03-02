@@ -54,10 +54,7 @@ class LocalLLMReranker:
                 messages=[
                     {
                         "role": "system",
-                        "content": (
-                            "You extract high-signal topic terms from transcripts. "
-                            "Return JSON only."
-                        ),
+                        "content": "You are a keyword extraction and ranking assistant. Return JSON only.",
                     },
                     {"role": "user", "content": prompt},
                 ],
@@ -67,7 +64,7 @@ class LocalLLMReranker:
             text = output["choices"][0]["message"]["content"] or ""
         except Exception:
             output = self._llm(
-                "<|im_start|>system\nYou extract high-signal topic terms from transcripts. Return JSON only.<|im_end|>\n"
+                "<|im_start|>system\nYou are a keyword extraction and ranking assistant. Return JSON only.<|im_end|>\n"
                 "<|im_start|>user\n"
                 + prompt
                 + "<|im_end|>\n"
@@ -94,22 +91,38 @@ class LocalLLMReranker:
         snippet = "\n".join([t.strip() for t in texts if t.strip()][-8:])
         ranked = sorted(base_terms.items(), key=lambda x: x[1], reverse=True)[:40]
         ranked_str = ", ".join([f"{t}:{s:.2f}" for t, s in ranked])
+        if not ranked_str:
+            ranked_str = "(none)"
 
         return (
-            "You are a keyword extraction assistant.\n"
-            "Task: from transcript text, return high-signal topic words/short phrases.\n"
-            "Avoid pronouns, modal verbs, filler words, and generic helper words.\n"
-            "Prefer concrete topical nouns and 2-word phrases.\n"
-            f"Return strict JSON array ONLY, max {top_k} items, each item as {{\"term\": string, \"score\": number 0..1}}.\n"
-            "Do not include markdown, explanation, or any extra text.\n"
+            "You are a keyword extraction and ranking assistant.\n"
+            "\n"
+            "Goal:\n"
+            "Extract high-signal topic terms/short phrases from the transcript for a realtime word cloud.\n"
+            "\n"
+            "Rules:\n"
+            "- Output strict JSON array ONLY. No markdown, no extra text.\n"
+            f"- Max {top_k} items. Each item: {{\"term\": string, \"score\": number 0..1}}.\n"
+            "- Prefer 2-3 word noun phrases (e.g., \"model quality\", \"workflow friction\", \"decision making\").\n"
+            "- Avoid generic single words unless they are essential and specific.\n"
+            "- Avoid pronouns, filler words, and helper words.\n"
+            "- Deduplicate by meaning (merge plural/singular, casing).\n"
+            "- You may (and should) combine words into better phrases.\n"
+            "- The \"Current ranked candidates\" list is ONLY a hint. You may drop bad candidates, rewrite them, merge them, and add missing important terms.\n"
+            "\n"
+            "Scoring guidance (0..1):\n"
+            "- 0.9-1.0 = core topic of the sentence\n"
+            "- 0.6-0.8 = important supporting concept\n"
+            "- 0.3-0.5 = minor but relevant\n"
+            "- Do not use 0 or 1 exactly.\n"
             "\n"
             "Transcript:\n"
             f"{snippet}\n"
             "\n"
-            "Current ranked candidates:\n"
+            "Current ranked candidates (optional hint):\n"
             f"{ranked_str}\n"
             "\n"
-            "JSON:\n"
+            "Return JSON:\n"
         )
 
     def _parse_json_scores(self, text: str) -> dict[str, float]:
