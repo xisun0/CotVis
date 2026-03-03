@@ -8,7 +8,8 @@ from realtime_asr.events import TopTermsEvent
 
 
 class CanvasStateBuilder:
-    def __init__(self) -> None:
+    def __init__(self, canvas_top_n: int = 15) -> None:
+        self._canvas_top_n = max(1, int(canvas_top_n))
         self._session_start: float | None = None
         self._last_ts: float = 0.0
         self._snapshot_count = 0
@@ -43,10 +44,18 @@ class CanvasStateBuilder:
         id_to_score: dict[str, float] = {}
         velocity = event.focus.velocity if event.focus is not None else {}
         if event.focus is not None and event.focus.distribution:
-            for cid, _, weight in event.focus.distribution:
+            ranked = sorted(
+                [(cid, float(weight)) for cid, _, weight in event.focus.distribution],
+                key=lambda item: (-item[1], str(item[0])),
+            )[: self._canvas_top_n]
+            for cid, weight in ranked:
                 id_to_score[cid] = float(weight)
         else:
-            for raw_term, score in event.terms:
+            ranked_terms = sorted(
+                [(raw_term, float(score)) for raw_term, score in event.terms],
+                key=lambda item: (-item[1], str(item[0])),
+            )[: self._canvas_top_n]
+            for raw_term, score in ranked_terms:
                 cid = registry.register(raw_term)
                 if cid:
                     id_to_score[cid] = id_to_score.get(cid, 0.0) + float(score)
@@ -97,7 +106,7 @@ class CanvasStateBuilder:
                 "dominant_display": registry.display(event.focus.dominant_id),
                 "distribution": [
                     {"id": cid, "display": registry.display(cid), "weight": float(weight)}
-                    for cid, _, weight in event.focus.distribution
+                    for cid, _, weight in event.focus.distribution[: self._canvas_top_n]
                 ],
                 "velocity": dict(event.focus.velocity),
             }

@@ -34,6 +34,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--open-browser", action="store_true")
     parser.add_argument("--ui-host", default="127.0.0.1")
     parser.add_argument("--ui-port", type=int, default=8765)
+    parser.add_argument(
+        "--canvas-top-n",
+        type=int,
+        default=15,
+        help="Active concept cap per snapshot used for lane assignment and canvas nodes.",
+    )
 
     parser.add_argument("--llm-model", default=None)
     parser.add_argument("--llm-interval", type=float, default=12.0)
@@ -78,11 +84,16 @@ def main() -> int:
         llm_top_k=args.llm_top_k,
         llm_only=args.llm_only,
         llm_primary=(args.llm_primary and llm_reranker is not None),
+        canvas_top_n=args.canvas_top_n,
     )
 
     web_server: TopTermsWebServer | None = None
     if args.serve_ui:
-        web_server = TopTermsWebServer(host=args.ui_host, port=args.ui_port)
+        web_server = TopTermsWebServer(
+            host=args.ui_host,
+            port=args.ui_port,
+            canvas_top_n=args.canvas_top_n,
+        )
         web_server.start()
         print(f"[SIM] Word cloud UI: {web_server.url()}")
         if args.open_browser:

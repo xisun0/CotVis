@@ -83,3 +83,17 @@ def test_canvas_builder_bridge_and_debug(monkeypatch) -> None:
     assert payload["bridge"]["concept_id"] == "neural_network"
     assert payload["_debug"] is not None
     assert "lane_assignments" in payload["_debug"]
+
+
+def test_canvas_builder_honors_canvas_top_n_limit() -> None:
+    builder = CanvasStateBuilder(canvas_top_n=1)
+    registry = ConceptRegistry()
+    lane = LaneAssigner()
+    registry.register("Machine Learning")
+    registry.register("Neural Network")
+    lane.assign("machine_learning", 1)
+    lane.assign("neural_network", 1)
+
+    builder.ingest(_event(10.0), lane, registry)
+    payload = builder.to_dict()
+    assert len(payload["nodes"]) == 1

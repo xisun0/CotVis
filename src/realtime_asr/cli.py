@@ -43,6 +43,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--open-browser", action="store_true")
     parser.add_argument("--ui-host", default="127.0.0.1")
     parser.add_argument("--ui-port", type=int, default=8765)
+    parser.add_argument(
+        "--canvas-top-n",
+        type=int,
+        default=15,
+        help="Active concept cap per snapshot used for lane assignment and canvas nodes.",
+    )
     parser.add_argument("--llm-model", default=None, help="Local GGUF model path for optional LLM reranking.")
     parser.add_argument("--llm-interval", type=float, default=12.0)
     parser.add_argument("--llm-weight", type=float, default=2.0)
@@ -85,13 +91,18 @@ def main() -> int:
         llm_top_k=args.llm_top_k,
         llm_only=args.llm_only,
         llm_primary=(args.llm_primary and llm_reranker is not None),
+        canvas_top_n=args.canvas_top_n,
     )
 
     backend = MacSpeechBackend(lang=args.lang, verbose=args.verbose)
     web_server: TopTermsWebServer | None = None
 
     if args.serve_ui:
-        web_server = TopTermsWebServer(host=args.ui_host, port=args.ui_port)
+        web_server = TopTermsWebServer(
+            host=args.ui_host,
+            port=args.ui_port,
+            canvas_top_n=args.canvas_top_n,
+        )
         try:
             web_server.start()
         except OSError as exc:

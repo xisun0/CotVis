@@ -56,13 +56,16 @@ class ConceptTracker:
         if total > 0.0:
             distribution = sorted(
                 [(cid, "", float(score) / total) for cid, score in id_to_score.items() if score > 0.0],
-                key=lambda x: x[2],
-                reverse=True,
+                key=lambda x: (-x[2], x[0]),
             )
         else:
             distribution = []
 
-        dominant_id = max(id_to_score.items(), key=lambda item: item[1])[0] if id_to_score else ""
+        dominant_id = (
+            sorted(id_to_score.items(), key=lambda item: (-float(item[1]), str(item[0])))[0][0]
+            if id_to_score
+            else ""
+        )
         velocity = {
             cid: float(score) - float(self._prev_scores.get(cid, 0.0))
             for cid, score in id_to_score.items()

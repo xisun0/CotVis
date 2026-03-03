@@ -30,6 +30,7 @@ class ContextManager:
         llm_only: bool = False,
         enable_lm_rescoring: bool = True,
         enable_phrase_scoring: bool = True,
+        canvas_top_n: int = 15,
     ) -> None:
         self.final_window_sec = final_window_sec
         self.partial_window_sec = partial_window_sec
@@ -54,6 +55,7 @@ class ContextManager:
         self._last_llm_ts = 0.0
         self._llm_cache: dict[str, float] = {}
         self._snapshot_count = 0
+        self.canvas_top_n = max(1, int(canvas_top_n))
 
         self.concept_registry = ConceptRegistry()
         self.lane_assigner = LaneAssigner()
@@ -138,22 +140,33 @@ class ContextManager:
                 merged[term] = merged.get(term, 0.0) + (s * self._llm_weight)
 
         self._snapshot_count += 1
-        top_terms = sorted(merged.items(), key=lambda item: item[1], reverse=True)[: self.top_k]
+        top_terms = sorted(
+            merged.items(),
+            key=lambda item: (-float(item[1]), str(item[0])),
+        )[: self.top_k]
 
-        id_to_score: dict[str, float] = {}
+        id_to_score_full: dict[str, float] = {}
         for raw_term, score in merged.items():
             cid = self.concept_registry.register(raw_term)
             if not cid:
                 continue
-            id_to_score[cid] = id_to_score.get(cid, 0.0) + float(score)
+            id_to_score_full[cid] = id_to_score_full.get(cid, 0.0) + float(score)
 
-        concept_ids = list(id_to_score.keys())
+        # Canvas/lane pipeline runs on a bounded active concept set to keep
+        # lane count and normalized focus weights visually meaningful.
+        active_ranked = sorted(
+            id_to_score_full.items(),
+            key=lambda item: (-float(item[1]), str(item[0])),
+        )[: self.canvas_top_n]
+        active_id_to_score = {cid: score for cid, score in active_ranked}
+
+        concept_ids = [cid for cid, _ in active_ranked]
         self.lane_assigner.update_cooc(concept_ids)
         for cid in concept_ids:
             self.lane_assigner.assign(cid, self._snapshot_count)
         self.concept_tracker.set_ephemeral_text(self.ephemeral_text)
         focus, phase, transition = self.concept_tracker.update(
-            id_to_score=id_to_score,
+            id_to_score=active_id_to_score,
             now_ts=now,
             snapshot_count=self._snapshot_count,
         )

@@ -6,17 +6,18 @@ from realtime_asr.context.manager import ContextManager
 from realtime_asr.events import TranscriptEvent
 
 
-def _build_manager() -> ContextManager:
+def _build_manager(canvas_top_n: int = 15) -> ContextManager:
     return ContextManager(
         final_window_sec=0,
         partial_window_sec=10,
-        top_k=20,
+        top_k=60,
         final_weight=1.0,
         partial_weight=0.0,
         llm_reranker=None,
         llm_primary=False,
         enable_lm_rescoring=False,
         enable_phrase_scoring=False,
+        canvas_top_n=canvas_top_n,
     )
 
 
@@ -125,3 +126,25 @@ def test_quality_gate_top3_is_stable_across_two_replays() -> None:
     run1 = _replay_finals(finals)
     run2 = _replay_finals(finals)
     assert run1 == run2
+
+
+def test_canvas_top_n_bounds_lane_growth_for_lane_assigner() -> None:
+    manager = _build_manager(canvas_top_n=15)
+    line = " ".join([f"word{chr(97 + (i // 26))}{chr(97 + (i % 26))}" for i in range(60)])
+    for i in range(8):
+        manager.on_event(_event(line, True, float(i + 1)))
+        manager.compute_top_terms(now_ts=float(i + 1))
+    assert manager.lane_assigner.get_lane_count() <= 43
+
+
+def test_canvas_top_n_keeps_lane_assignment_stable_for_repeated_concepts() -> None:
+    manager = _build_manager(canvas_top_n=15)
+    line = " ".join([f"word{chr(97 + (i // 26))}{chr(97 + (i % 26))}" for i in range(60)])
+    manager.on_event(_event(line, True, 1.0))
+    manager.compute_top_terms(now_ts=1.0)
+    first = manager.lane_assigner.get_all_assignments().get("wordaa")
+    assert first is not None
+    for i in range(2, 12):
+        manager.on_event(_event(line, True, float(i)))
+        manager.compute_top_terms(now_ts=float(i))
+    assert manager.lane_assigner.get_all_assignments().get("wordaa") == first

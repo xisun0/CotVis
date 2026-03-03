@@ -13,7 +13,12 @@ from realtime_asr.web.canvas_builder import CanvasStateBuilder
 
 
 class TopTermsWebServer:
-    def __init__(self, host: str = "127.0.0.1", port: int = 8765) -> None:
+    def __init__(
+        self,
+        host: str = "127.0.0.1",
+        port: int = 8765,
+        canvas_top_n: int = 15,
+    ) -> None:
         self.host = host
         self.port = port
 
@@ -24,7 +29,7 @@ class TopTermsWebServer:
             "top_k": 60,
             "terms": [],
         }
-        self._canvas_builder = CanvasStateBuilder()
+        self._canvas_builder = CanvasStateBuilder(canvas_top_n=canvas_top_n)
 
         self._httpd: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None

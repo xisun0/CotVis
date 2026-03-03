@@ -222,6 +222,7 @@
       const BASE_R = 10;
       const POLL_MS = 2000;
       const CANVAS_WINDOW_SEC = 120;  // display window, independent of zoom
+      const MIN_PHASE_HEIGHT = 26;
 
       const viewport = document.getElementById("viewport");
       const trailsCanvas = document.getElementById("trailsCanvas");
@@ -244,7 +245,7 @@
       const hitLayer = svg.append("g");
 
       let state = null;
-      let transform = d3.zoomIdentity.translate(50, 44).scale(1.5);
+      let transform = d3.zoomIdentity.translate(50, 44).scale(0.9);
       let autoFollow = true;
       let selectedConcept = null;
       let selectedPhase = null;
@@ -363,18 +364,17 @@
         bridgeLayer.attr("transform", transform.toString());
         hitLayer.attr("transform", transform.toString());
 
-        const maxLane = Math.max(1, ...nodes.map((n) => n.lane_index));
-        const phaseHeight = (maxLane + 2) * LANE_HEIGHT;
         for (const phase of state.phases || []) {
           const x1 = xOf(phase.ts_start);
           const x2 = xOf(phase.ts_end ?? state.ts);
           const y1 = yOf(phase.lane_min) - LANE_HEIGHT * 0.55;
           const y2 = yOf(phase.lane_max) + LANE_HEIGHT * 0.55;
+          const h = Math.max(MIN_PHASE_HEIGHT, y2 - y1);
           phaseLayer.append("rect")
             .attr("x", x1)
             .attr("y", Math.max(-LANE_HEIGHT, y1))
             .attr("width", Math.max(3, x2 - x1))
-            .attr("height", Math.max(phaseHeight * 0.12, y2 - y1))
+            .attr("height", h)
             .attr("fill", selectedPhase === phase.id ? "#af9f7d44" : "#af9f7d22")
             .attr("stroke", "#6f5f472d")
             .attr("stroke-width", 1 / Math.max(transform.k, 0.35))
@@ -403,6 +403,8 @@
             .attr("stroke", "#7d5337cc")
             .attr("stroke-width", 2.8 / Math.max(transform.k, 0.4));
         }
+        liveNodes.textContent = String(nodes.length);
+        liveEdges.textContent = String(edges.length);
       }
 
       function toWorld(clientX, clientY) {
@@ -509,8 +511,6 @@
 
         liveDominant.textContent = state.focus?.dominant_display || "--";
         livePhase.textContent = state.phase ? `${state.phase.id}${state.phase.label ? ` · ${state.phase.label}` : ""}` : "--";
-        liveNodes.textContent = String((state.nodes || []).length);
-        liveEdges.textContent = String((state.edges || []).length);
       }
 
       async function refresh() {
