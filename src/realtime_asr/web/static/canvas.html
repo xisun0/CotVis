@@ -453,7 +453,7 @@
         if (nearest && nearestDist <= 440) {
           tooltip.style.left = `${p.sx}px`;
           tooltip.style.top = `${p.sy}px`;
-          tooltip.innerHTML = `${nearest.display}<br/>score ${nearest.score.toFixed(3)} · ${formatVelocity(nearest.velocity)}<br/>phase ${nearest.phase_id}`;
+          tooltip.innerHTML = `${nearest.display}<br/>score_norm ${nearest.score.toFixed(3)} · velocity_norm ${formatVelocity(nearest.velocity)}<br/>phase ${nearest.phase_id}`;
           tooltip.style.opacity = "1";
           return;
         }

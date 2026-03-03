@@ -18,6 +18,7 @@ class ConceptTracker:
         self.bridge_top_k = int(bridge_top_k)
 
         self._prev_scores: dict[str, float] = {}
+        self._prev_norm_scores: dict[str, float] = {}
         self._prev_ids: set[str] = set()
         self._ages: dict[str, int] = {}
         self._low_streak = 0
@@ -66,9 +67,10 @@ class ConceptTracker:
             if id_to_score
             else ""
         )
+        current_norm = {cid: weight for cid, _, weight in distribution}
         velocity = {
-            cid: float(score) - float(self._prev_scores.get(cid, 0.0))
-            for cid, score in id_to_score.items()
+            cid: float(current_norm.get(cid, 0.0)) - float(self._prev_norm_scores.get(cid, 0.0))
+            for cid in current_norm.keys()
         }
 
         for cid in id_to_score:
@@ -140,6 +142,7 @@ class ConceptTracker:
         )
 
         self._prev_scores = dict(id_to_score)
+        self._prev_norm_scores = dict(current_norm)
         self._prev_ids = set(current_ids)
 
         return focus, replace(self._current_phase) if self._current_phase is not None else Phase(0, now_ts, None, 0, 0, None, []), transition

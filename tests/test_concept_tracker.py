@@ -51,6 +51,15 @@ def test_velocity_signs_reflect_rise_and_fade() -> None:
     assert focus.velocity["b"] < 0
 
 
+def test_velocity_norm_uses_normalized_score_delta() -> None:
+    tracker = ConceptTracker()
+    tracker.update({"a": 2.0, "b": 1.0}, now_ts=1.0, snapshot_count=1)
+    focus, _, _ = tracker.update({"a": 3.0, "b": 1.0}, now_ts=2.0, snapshot_count=2)
+    # t1: a=0.6667,b=0.3333 ; t2: a=0.75,b=0.25
+    assert abs(focus.velocity["a"] - (0.75 - (2.0 / 3.0))) < 1e-6
+    assert abs(focus.velocity["b"] - (0.25 - (1.0 / 3.0))) < 1e-6
+
+
 def test_age_tracking_counts_presence_snapshots() -> None:
     tracker = ConceptTracker()
     for i in range(5):
