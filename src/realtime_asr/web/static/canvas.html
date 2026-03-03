@@ -294,35 +294,10 @@
         }
       }
 
-      // Stable decimation: one representative per (concept_id, time-bucket).
-      // bucket key = floor((ts - session_start) / bucketSec) — deterministic,
-      // unchanged by later data arriving.
-      function decimateByBucket(nodes, bucketSec) {
-        const origin = state?.session_start ?? 0;
-        const seen = new Set();
-        const result = [];
-        for (const node of nodes) {
-          const bucket = Math.floor((node.ts - origin) / bucketSec);
-          const key = `${node.id}:${bucket}`;
-          if (!seen.has(key)) {
-            seen.add(key);
-            result.push(node);
-          }
-        }
-        return result;
-      }
-
-      // LOD → rendering detail only. Concept set is always the full window.
-      function renderNodes(level) {
-        if (level === "high") return baseNodes;           // all points
-        if (level === "mid")  return decimateByBucket(baseNodes, 5);   // 1 pt / 5s bucket
-        return decimateByBucket(baseNodes, 15);            // 1 pt / 15s bucket
-      }
-
-      function renderEdges(level) {
-        if (level === "high") return baseEdges;
-        return baseEdges.filter((e) => e.type === "bridge");
-      }
+      // Zoom is a pure viewport transform — dataset never changes on zoom.
+      // renderNodes/renderEdges always return the full time-windowed base set.
+      function renderNodes() { return baseNodes; }
+      function renderEdges() { return baseEdges; }
 
       function formatVelocity(v) {
         if (v > 0.06) return `↑ ${v.toFixed(3)}`;
@@ -334,8 +309,8 @@
         if (!state) return;
         const k = transform.k;
         const level = lodLevel(k);
-        const nodes = renderNodes(level);
-        const edges = renderEdges(level);
+        const nodes = renderNodes();
+        const edges = renderEdges();
         hoverNodes = nodes;
         hoverBridges = edges.filter((e) => e.type === "bridge");
 
@@ -348,19 +323,17 @@
         trailsCtx.setTransform(transform.k, 0, 0, transform.k, transform.x, transform.y);
         nodesCtx.setTransform(transform.k, 0, 0, transform.k, transform.x, transform.y);
 
-        if (level === "high") {
-          trailsCtx.lineWidth = 1 / Math.max(transform.k, 0.2);
-          trailsCtx.strokeStyle = "#374b6438";
-          for (const edge of edges) {
-            if (edge.type !== "persistence") continue;
-            const x1 = xOf(edge.ts_start);
-            const x2 = xOf(edge.ts_end);
-            const y = yOf(edge.lane_index);
-            trailsCtx.beginPath();
-            trailsCtx.moveTo(x1, y);
-            trailsCtx.lineTo(x2, y);
-            trailsCtx.stroke();
-          }
+        trailsCtx.lineWidth = 1 / Math.max(transform.k, 0.2);
+        trailsCtx.strokeStyle = "#374b6438";
+        for (const edge of edges) {
+          if (edge.type !== "persistence") continue;
+          const x1 = xOf(edge.ts_start);
+          const x2 = xOf(edge.ts_end);
+          const y = yOf(edge.lane_index);
+          trailsCtx.beginPath();
+          trailsCtx.moveTo(x1, y);
+          trailsCtx.lineTo(x2, y);
+          trailsCtx.stroke();
         }
 
         for (const node of nodes) {
@@ -410,7 +383,7 @@
               selectionText.textContent = `Phase ${phase.id}: ${phase.label || "unlabeled"} | lanes ${phase.lane_min}..${phase.lane_max}`;
               draw();
             });
-          if (transform.k >= 0.85) {
+          if (level !== "low") {
             phaseLayer.append("text")
               .attr("x", x1 + 8)
               .attr("y", Math.max(16, y1 + 14))
