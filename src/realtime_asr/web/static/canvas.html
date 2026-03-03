@@ -221,6 +221,7 @@
       const LANE_HEIGHT = 60;
       const BASE_R = 10;
       const POLL_MS = 2000;
+      const CANVAS_WINDOW_SEC = 120;  // display window, independent of zoom
 
       const viewport = document.getElementById("viewport");
       const trailsCanvas = document.getElementById("trailsCanvas");
@@ -250,6 +251,10 @@
       let lastSnapshotCount = -1;
       let hoverNodes = [];
       let hoverBridges = [];
+      // Base dataset: fixed per data-refresh, independent of zoom/LOD.
+      let baseNodes = [];
+      let baseEdges = [];
+      let latestByConcept = new Map();  // concept_id → latest node in window
 
       function sizeCanvases() {
         const rect = viewport.getBoundingClientRect();
@@ -274,33 +279,49 @@
         return "high";
       }
 
-      function visibleNodes(level) {
+      // Called once per data-refresh — builds the time-windowed base dataset.
+      // zoom/LOD must NOT call this; they read baseNodes/baseEdges directly.
+      function computeBase() {
         const all = state?.nodes ?? [];
-        const windowSec = state?.window_sec ?? 60;
-        const cutoff = (state?.ts ?? 0) - windowSec;
-        const windowed = all.filter((n) => n.ts >= cutoff);
-        if (level === "high") return windowed;
-        if (level === "mid") {
-          return [...windowed].sort((a, b) => b.score - a.score).slice(0, 20);
+        const cutoff = (state?.ts ?? 0) - CANVAS_WINDOW_SEC;
+        baseNodes = all.filter((n) => n.ts >= cutoff);
+        baseEdges = state?.edges ?? [];
+        // One label anchor per concept: latest ts in the window.
+        latestByConcept = new Map();
+        for (const node of baseNodes) {
+          const prev = latestByConcept.get(node.id);
+          if (!prev || node.ts > prev.ts) latestByConcept.set(node.id, node);
         }
-        const byPhase = new Map();
-        for (const node of windowed) {
-          const arr = byPhase.get(node.phase_id) ?? [];
-          arr.push(node);
-          byPhase.set(node.phase_id, arr);
-        }
-        const picked = [];
-        for (const arr of byPhase.values()) {
-          arr.sort((a, b) => b.score - a.score);
-          picked.push(...arr.slice(0, 5));
-        }
-        return picked;
       }
 
-      function visibleEdges(level) {
-        const allEdges = state?.edges ?? [];
-        if (level === "high") return allEdges;
-        return allEdges.filter((e) => e.type === "bridge");
+      // Stable decimation: one representative per (concept_id, time-bucket).
+      // bucket key = floor((ts - session_start) / bucketSec) — deterministic,
+      // unchanged by later data arriving.
+      function decimateByBucket(nodes, bucketSec) {
+        const origin = state?.session_start ?? 0;
+        const seen = new Set();
+        const result = [];
+        for (const node of nodes) {
+          const bucket = Math.floor((node.ts - origin) / bucketSec);
+          const key = `${node.id}:${bucket}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            result.push(node);
+          }
+        }
+        return result;
+      }
+
+      // LOD → rendering detail only. Concept set is always the full window.
+      function renderNodes(level) {
+        if (level === "high") return baseNodes;           // all points
+        if (level === "mid")  return decimateByBucket(baseNodes, 5);   // 1 pt / 5s bucket
+        return decimateByBucket(baseNodes, 15);            // 1 pt / 15s bucket
+      }
+
+      function renderEdges(level) {
+        if (level === "high") return baseEdges;
+        return baseEdges.filter((e) => e.type === "bridge");
       }
 
       function formatVelocity(v) {
@@ -313,8 +334,8 @@
         if (!state) return;
         const k = transform.k;
         const level = lodLevel(k);
-        const nodes = visibleNodes(level);
-        const edges = visibleEdges(level);
+        const nodes = renderNodes(level);
+        const edges = renderEdges(level);
         hoverNodes = nodes;
         hoverBridges = edges.filter((e) => e.type === "bridge");
 
@@ -342,26 +363,18 @@
           }
         }
 
-        // Fix B: one label per concept — latest ts within the window
-        const latestByConceptForLabel = new Map();
-        if (level === "high") {
-          for (const node of nodes) {
-            const prev = latestByConceptForLabel.get(node.id);
-            if (!prev || node.ts > prev.ts) latestByConceptForLabel.set(node.id, node);
-          }
-        }
-
         for (const node of nodes) {
           const x = xOf(node.ts);
           const y = yOf(node.lane_index);
-          // Fix D: radius visible for normalized weights (0.05–0.10 range)
           const r = Math.max(4, Math.sqrt(Math.max(node.score, 0.0001)) * BASE_R * 2.0);
           const selected = selectedConcept && selectedConcept === node.id;
           nodesCtx.beginPath();
           nodesCtx.fillStyle = selected ? "rgba(191,95,54,0.95)" : "rgba(33,63,98,0.84)";
           nodesCtx.arc(x, y, selected ? r * 1.22 : r, 0, Math.PI * 2);
           nodesCtx.fill();
-          if (level === "high" && latestByConceptForLabel.get(node.id) === node) {
+          // Labels: high LOD only, one per concept at its latest window position
+          // (latestByConcept built once in computeBase — not recalculated per draw)
+          if (level === "high" && latestByConcept.get(node.id) === node) {
             nodesCtx.fillStyle = "rgba(31,42,51,0.86)";
             nodesCtx.font = `${12 / Math.max(transform.k, 0.35)}px Avenir Next, Trebuchet MS, sans-serif`;
             nodesCtx.fillText(node.display, x + r + 3, y - 3);
@@ -533,6 +546,7 @@
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const payload = await res.json();
           state = payload;
+          computeBase();  // derive baseNodes/baseEdges/latestByConcept once per poll
           if (state.snapshot_count !== lastSnapshotCount) {
             lastSnapshotCount = state.snapshot_count;
             applyAutoFollow();
