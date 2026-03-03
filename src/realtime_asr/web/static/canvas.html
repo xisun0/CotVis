@@ -210,7 +210,7 @@
           <h3>Hints</h3>
           <p class="summary">
             Zoom: mouse wheel / pinch. Pan: drag.  
-            LOD: low (&lt;0.4) top-5 per phase, mid top-20, high all entities.
+            LOD: low (&lt;0.4) no labels; mid (0.4–1.5) one label per concept for top 10; high (&gt;1.5) one label per concept for all visible.
           </p>
         </section>
       </aside>
@@ -346,11 +346,23 @@
           nodesCtx.fillStyle = selected ? "rgba(191,95,54,0.95)" : "rgba(33,63,98,0.84)";
           nodesCtx.arc(x, y, selected ? r * 1.22 : r, 0, Math.PI * 2);
           nodesCtx.fill();
-          // Labels: high LOD only, one per concept at its latest window position
-          // (latestByConcept built once in computeBase — not recalculated per draw)
-          if (level === "high" && latestByConcept.get(node.id) === node) {
-            nodesCtx.fillStyle = "rgba(31,42,51,0.86)";
-            nodesCtx.font = `${12 / Math.max(transform.k, 0.35)}px Avenir Next, Trebuchet MS, sans-serif`;
+        }
+
+        let labelNodes = [];
+        if (level === "high") {
+          labelNodes = [...latestByConcept.values()].sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+        } else if (level === "mid") {
+          labelNodes = [...latestByConcept.values()]
+            .sort((a, b) => b.score - a.score || a.id.localeCompare(b.id))
+            .slice(0, 10);
+        }
+        if (labelNodes.length) {
+          nodesCtx.fillStyle = "rgba(31,42,51,0.86)";
+          nodesCtx.font = `${12 / Math.max(transform.k, 0.35)}px Avenir Next, Trebuchet MS, sans-serif`;
+          for (const node of labelNodes) {
+            const x = xOf(node.ts);
+            const y = yOf(node.lane_index);
+            const r = Math.max(4, Math.sqrt(Math.max(node.score, 0.0001)) * BASE_R * 2.0);
             nodesCtx.fillText(node.display, x + r + 3, y - 3);
           }
         }
