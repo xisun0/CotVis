@@ -27,6 +27,11 @@ def test_canonical_id_neural_network() -> None:
     assert canonical_id("neural-network") == "neural_network"
 
 
+def test_canonical_id_collapses_simple_plurals() -> None:
+    assert canonical_id("Models") == "model"
+    assert canonical_id("Categories") == "category"
+
+
 def test_cooc_once_during_warmup_joins_existing_group() -> None:
     assigner = LaneAssigner(theta=2.0, theta_min=1.0, warmup_n=10, gap=2)
     assigner.update_cooc(["a", "b"])
@@ -68,3 +73,10 @@ def test_get_all_assignments_returns_copy() -> None:
     copied = assigner.get_all_assignments()
     copied["a"] = 999
     assert assigner.get_all_assignments()["a"] == 0
+
+
+def test_lane_assigner_max_lanes_fuse_caps_growth() -> None:
+    assigner = LaneAssigner(gap=2, max_lanes=20)
+    for i in range(120):
+        assigner.assign(f"c{i}", snapshot_count=20)
+    assert assigner.get_lane_count() <= 20

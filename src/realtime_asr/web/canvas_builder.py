@@ -146,25 +146,26 @@ class CanvasStateBuilder:
 
         if event.transition is not None and event.transition.bridge is not None:
             bridge = event.transition.bridge
-            lane_index = lane_assignments.get(bridge.concept_id, lane_assigner.assign(bridge.concept_id, self._snapshot_count))
-            bridge_dict = {
-                "from_phase": event.transition.from_phase_id,
-                "to_phase": event.transition.to_phase_id,
-                "concept_id": bridge.concept_id,
-                "display": registry.display(bridge.concept_id),
-                "ts": event.transition.ts,
-            }
-            self._latest_bridge = bridge_dict
-            self._bridge_edges.append(
-                {
-                    "type": "bridge",
+            lane_index = lane_assignments.get(bridge.concept_id)
+            if lane_index is not None:
+                bridge_dict = {
+                    "from_phase": event.transition.from_phase_id,
+                    "to_phase": event.transition.to_phase_id,
                     "concept_id": bridge.concept_id,
-                    "from_phase_id": event.transition.from_phase_id,
-                    "to_phase_id": event.transition.to_phase_id,
+                    "display": registry.display(bridge.concept_id),
                     "ts": event.transition.ts,
-                    "lane_index": lane_index,
                 }
-            )
+                self._latest_bridge = bridge_dict
+                self._bridge_edges.append(
+                    {
+                        "type": "bridge",
+                        "concept_id": bridge.concept_id,
+                        "from_phase_id": event.transition.from_phase_id,
+                        "to_phase_id": event.transition.to_phase_id,
+                        "ts": event.transition.ts,
+                        "lane_index": lane_index,
+                    }
+                )
 
     def to_dict(self) -> dict[str, object]:
         lane_assigner = self._lane_assigner

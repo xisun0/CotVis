@@ -17,16 +17,19 @@ class LaneAssigner:
         theta_min: float = 1.0,
         warmup_n: int = 10,
         gap: int = 2,
+        max_lanes: int = 80,
     ) -> None:
         self.theta = float(theta)
         self.theta_min = float(theta_min)
         self.warmup_n = int(warmup_n)
         self.gap = int(gap)
+        self.max_lanes = max(1, int(max_lanes))
 
         self._groups: list[LaneGroup] = []
         self._assignments: dict[str, int] = {}
         self._cooc: dict[str, dict[str, int]] = {}
         self._next_free = 0
+        self._overflow_lane = self.max_lanes - 1
 
     def update_cooc(self, concept_ids: list[str]) -> None:
         ordered: list[str] = []
@@ -63,15 +66,20 @@ class LaneAssigner:
             group.members.append(concept_id)
             group.next_index += 1
         else:
-            lane_index = self._next_free
-            self._groups.append(
-                LaneGroup(
-                    start_index=lane_index,
-                    members=[concept_id],
-                    next_index=lane_index + 1,
+            if self._next_free > self._overflow_lane:
+                lane_index = self._overflow_lane
+            else:
+                lane_index = self._next_free
+                self._groups.append(
+                    LaneGroup(
+                        start_index=lane_index,
+                        members=[concept_id],
+                        next_index=lane_index + 1,
+                    )
                 )
-            )
-            self._next_free += 1 + self.gap
+                self._next_free += 1 + self.gap
+                if self._next_free > self._overflow_lane:
+                    self._next_free = self._overflow_lane + 1
 
         self._assignments[concept_id] = lane_index
         return lane_index
@@ -88,7 +96,7 @@ class LaneAssigner:
     def get_lane_count(self) -> int:
         if not self._assignments:
             return 0
-        return max(self._assignments.values()) + 1
+        return min(self.max_lanes, max(self._assignments.values()) + 1)
 
     def get_cooc_top(self, top_n: int = 10) -> dict[str, dict[str, int]]:
         out: dict[str, dict[str, int]] = {}
