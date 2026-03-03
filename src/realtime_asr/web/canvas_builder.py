@@ -113,8 +113,20 @@ class CanvasStateBuilder:
         else:
             self._focus = None
 
-        if event.phase is not None:
-            phase_dict = {
+        if event.phases:
+            self._phases_by_id = {
+                int(phase.id): {
+                    "id": int(phase.id),
+                    "ts_start": float(phase.ts_start),
+                    "ts_end": None if phase.ts_end is None else float(phase.ts_end),
+                    "lane_min": int(phase.lane_min),
+                    "lane_max": int(phase.lane_max),
+                    "label": phase.label,
+                }
+                for phase in event.phases
+            }
+        elif event.phase is not None:
+            self._phases_by_id[event.phase.id] = {
                 "id": event.phase.id,
                 "ts_start": event.phase.ts_start,
                 "ts_end": event.phase.ts_end,
@@ -122,16 +134,15 @@ class CanvasStateBuilder:
                 "lane_max": event.phase.lane_max,
                 "label": event.phase.label,
             }
-            existing = self._phases_by_id.get(event.phase.id)
-            if existing is None:
-                self._phases_by_id[event.phase.id] = phase_dict
-            else:
-                existing["ts_start"] = min(float(existing["ts_start"]), float(phase_dict["ts_start"]))
-                existing["ts_end"] = phase_dict["ts_end"]
-                existing["lane_min"] = min(int(existing["lane_min"]), int(phase_dict["lane_min"]))
-                existing["lane_max"] = max(int(existing["lane_max"]), int(phase_dict["lane_max"]))
-                existing["label"] = phase_dict["label"] or existing["label"]
-            self._phase = dict(self._phases_by_id[event.phase.id])
+        if event.phase is not None:
+            self._phase = dict(self._phases_by_id.get(event.phase.id, {
+                "id": event.phase.id,
+                "ts_start": event.phase.ts_start,
+                "ts_end": event.phase.ts_end,
+                "lane_min": event.phase.lane_min,
+                "lane_max": event.phase.lane_max,
+                "label": event.phase.label,
+            }))
 
         if event.transition is not None and event.transition.bridge is not None:
             bridge = event.transition.bridge

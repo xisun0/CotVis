@@ -21,6 +21,7 @@ class TopTermsEvent:
     focus: FocusMass | None = None
     phase: Phase | None = None
     transition: PhaseTransition | None = None
+    phases: list[Phase] | None = None
 
 
 @dataclass(slots=True)

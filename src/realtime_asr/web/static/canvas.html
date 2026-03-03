@@ -364,9 +364,14 @@
         bridgeLayer.attr("transform", transform.toString());
         hitLayer.attr("transform", transform.toString());
 
-        for (const phase of state.phases || []) {
+        const orderedPhases = [...(state.phases || [])].sort((a, b) => a.ts_start - b.ts_start || a.id - b.id);
+        for (let i = 0; i < orderedPhases.length; i += 1) {
+          const phase = orderedPhases[i];
+          const nextStart = orderedPhases[i + 1]?.ts_start;
           const x1 = xOf(phase.ts_start);
-          const x2 = xOf(phase.ts_end ?? state.ts);
+          const tsEnd = phase.ts_end ?? state.ts;
+          const boundedTsEnd = nextStart !== undefined ? Math.min(tsEnd, nextStart) : tsEnd;
+          const x2 = xOf(boundedTsEnd);
           const y1 = yOf(phase.lane_min) - LANE_HEIGHT * 0.55;
           const y2 = yOf(phase.lane_max) + LANE_HEIGHT * 0.55;
           const h = Math.max(MIN_PHASE_HEIGHT, y2 - y1);

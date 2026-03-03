@@ -198,6 +198,7 @@ class ContextManager:
             focus=focus,
             phase=phase,
             transition=transition,
+            phases=self.concept_tracker.get_phases(),
         )
 
     def _extract_new_stable_text(self, full_text: str) -> str:

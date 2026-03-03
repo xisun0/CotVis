@@ -6,7 +6,12 @@ from realtime_asr.events import BridgeConcept, FocusMass, Phase, PhaseTransition
 from realtime_asr.web.canvas_builder import CanvasStateBuilder
 
 
-def _event(ts: float, phase_id: int = 1, transition: PhaseTransition | None = None) -> TopTermsEvent:
+def _event(
+    ts: float,
+    phase_id: int = 1,
+    transition: PhaseTransition | None = None,
+    phases: list[Phase] | None = None,
+) -> TopTermsEvent:
     return TopTermsEvent(
         ts=ts,
         window_sec=60,
@@ -30,6 +35,7 @@ def _event(ts: float, phase_id: int = 1, transition: PhaseTransition | None = No
             centroid=[("machine_learning", 1.2)],
         ),
         transition=transition,
+        phases=phases,
     )
 
 
@@ -97,3 +103,21 @@ def test_canvas_builder_honors_canvas_top_n_limit() -> None:
     builder.ingest(_event(10.0), lane, registry)
     payload = builder.to_dict()
     assert len(payload["nodes"]) == 1
+
+
+def test_canvas_builder_phases_closed_and_non_overlapping() -> None:
+    builder = CanvasStateBuilder()
+    registry = ConceptRegistry()
+    lane = LaneAssigner()
+    registry.register("Machine Learning")
+    lane.assign("machine_learning", 1)
+
+    phases = [
+        Phase(id=1, ts_start=100.0, ts_end=110.0, lane_min=0, lane_max=2, label="a"),
+        Phase(id=2, ts_start=110.0, ts_end=None, lane_min=1, lane_max=3, label="b"),
+    ]
+    builder.ingest(_event(111.0, phase_id=2, phases=phases), lane, registry)
+    out = builder.to_dict()
+    assert len(out["phases"]) == 2
+    assert out["phases"][0]["ts_end"] == 110.0
+    assert out["phases"][0]["ts_end"] <= out["phases"][1]["ts_start"]
