@@ -223,6 +223,7 @@
       const POLL_MS = 2000;
       const CANVAS_WINDOW_SEC = 120;  // display window, independent of zoom
       const MIN_PHASE_HEIGHT = 26;
+      const ACTIVE_CONCEPT_TOP_N = 15;
 
       const viewport = document.getElementById("viewport");
       const trailsCanvas = document.getElementById("trailsCanvas");
@@ -257,6 +258,9 @@
       let baseEdges = [];
       let latestByConcept = new Map();  // concept_id → latest node in window
       let conceptWindowScore = new Map(); // concept_id -> aggregated score in window
+      let laneRowMap = new Map(); // lane_index -> render row
+      let activeConceptIds = [];
+      let activeLaneSet = new Set();
 
       function sizeCanvases() {
         const rect = viewport.getBoundingClientRect();
@@ -274,6 +278,10 @@
       function yOf(laneIndex) {
         return laneIndex * LANE_HEIGHT;
       }
+      function renderYOf(laneIndex) {
+        const row = laneRowMap.get(laneIndex);
+        return (row === undefined ? laneIndex : row) * LANE_HEIGHT;
+      }
 
       function lodLevel(k) {
         if (k < 0.4) return "low";
@@ -290,11 +298,30 @@
         baseEdges = state?.edges ?? [];
         // One label anchor per concept: latest ts in the window.
         latestByConcept = new Map();
+        conceptWindowScore = new Map();
         for (const node of baseNodes) {
           const prev = latestByConcept.get(node.id);
           if (!prev || node.ts > prev.ts) latestByConcept.set(node.id, node);
           conceptWindowScore.set(node.id, (conceptWindowScore.get(node.id) || 0) + Number(node.score || 0));
         }
+
+        const rankedConcepts = [...latestByConcept.keys()]
+          .sort((a, b) => (conceptWindowScore.get(b) || 0) - (conceptWindowScore.get(a) || 0) || a.localeCompare(b));
+        activeConceptIds = rankedConcepts.slice(0, ACTIVE_CONCEPT_TOP_N);
+        const activeLanes = [];
+        const seenLane = new Set();
+        for (const cid of activeConceptIds) {
+          const lane = latestByConcept.get(cid)?.lane_index;
+          if (lane === undefined || seenLane.has(lane)) continue;
+          seenLane.add(lane);
+          activeLanes.push(lane);
+        }
+        activeLaneSet = new Set(activeLanes);
+        const allLanes = [...new Set(baseNodes.map((n) => n.lane_index))].sort((a, b) => a - b);
+        const inactiveLanes = allLanes.filter((lane) => !activeLaneSet.has(lane));
+        const orderedLanes = [...activeLanes, ...inactiveLanes];
+        laneRowMap = new Map();
+        orderedLanes.forEach((lane, i) => laneRowMap.set(lane, i));
       }
 
       // Zoom is a pure viewport transform — dataset never changes on zoom.
@@ -312,8 +339,12 @@
         if (!state) return;
         const k = transform.k;
         const level = lodLevel(k);
-        const nodes = renderNodes();
-        const edges = renderEdges();
+        let nodes = renderNodes();
+        let edges = renderEdges();
+        if (level === "mid") {
+          nodes = nodes.filter((n) => activeLaneSet.has(n.lane_index));
+          edges = edges.filter((e) => e.type !== "persistence" || activeLaneSet.has(e.lane_index));
+        }
         hoverNodes = nodes;
         hoverBridges = edges.filter((e) => e.type === "bridge");
 
@@ -332,7 +363,7 @@
           if (edge.type !== "persistence") continue;
           const x1 = xOf(edge.ts_start);
           const x2 = xOf(edge.ts_end);
-          const y = yOf(edge.lane_index);
+          const y = renderYOf(edge.lane_index);
           trailsCtx.beginPath();
           trailsCtx.moveTo(x1, y);
           trailsCtx.lineTo(x2, y);
@@ -341,7 +372,7 @@
 
         for (const node of nodes) {
           const x = xOf(node.ts);
-          const y = yOf(node.lane_index);
+          const y = renderYOf(node.lane_index);
           const r = Math.max(4, Math.sqrt(Math.max(node.score, 0.0001)) * BASE_R * 2.0);
           const selected = selectedConcept && selectedConcept === node.id;
           nodesCtx.beginPath();
@@ -367,7 +398,7 @@
           nodesCtx.lineJoin = "round";
           for (const node of labelNodes) {
             const x = xOf(node.ts);
-            const y = yOf(node.lane_index);
+            const y = renderYOf(node.lane_index);
             const r = Math.max(4, Math.sqrt(Math.max(node.score, 0.0001)) * BASE_R * 2.0);
             const text = node.display;
             const tx = x + r + 8;
@@ -401,6 +432,15 @@
         bridgeLayer.attr("transform", transform.toString());
         hitLayer.attr("transform", transform.toString());
 
+        const phaseBounds = new Map();
+        for (const node of nodes) {
+          const y = renderYOf(node.lane_index);
+          const b = phaseBounds.get(node.phase_id) || { min: y, max: y };
+          b.min = Math.min(b.min, y);
+          b.max = Math.max(b.max, y);
+          phaseBounds.set(node.phase_id, b);
+        }
+
         const orderedPhases = [...(state.phases || [])].sort((a, b) => a.ts_start - b.ts_start || a.id - b.id);
         for (let i = 0; i < orderedPhases.length; i += 1) {
           const phase = orderedPhases[i];
@@ -409,8 +449,10 @@
           const tsEnd = phase.ts_end ?? state.ts;
           const boundedTsEnd = nextStart !== undefined ? Math.min(tsEnd, nextStart) : tsEnd;
           const x2 = xOf(boundedTsEnd);
-          const y1 = yOf(phase.lane_min) - LANE_HEIGHT * 0.55;
-          const y2 = yOf(phase.lane_max) + LANE_HEIGHT * 0.55;
+          const bounds = phaseBounds.get(phase.id);
+          if (level === "mid" && !bounds) continue;
+          const y1 = (bounds ? bounds.min : renderYOf(phase.lane_min)) - LANE_HEIGHT * 0.55;
+          const y2 = (bounds ? bounds.max : renderYOf(phase.lane_max)) + LANE_HEIGHT * 0.55;
           const h = Math.max(MIN_PHASE_HEIGHT, y2 - y1);
           phaseLayer.append("rect")
             .attr("x", x1)
@@ -437,7 +479,7 @@
         for (const edge of edges) {
           if (edge.type !== "bridge") continue;
           const x = xOf(edge.ts);
-          const y = yOf(edge.lane_index);
+          const y = renderYOf(edge.lane_index);
           const arc = `M${x},${y - 22} Q${x + 32},${y - 64} ${x + 70},${y - 24}`;
           bridgeLayer.append("path")
             .attr("d", arc)
@@ -468,7 +510,7 @@
         let nearestDist = Infinity;
         for (const node of hoverNodes) {
           const dx = p.x - xOf(node.ts);
-          const dy = p.y - yOf(node.lane_index);
+          const dy = p.y - renderYOf(node.lane_index);
           const d2 = dx * dx + dy * dy;
           if (d2 < nearestDist) {
             nearestDist = d2;
@@ -484,7 +526,7 @@
         }
         for (const edge of hoverBridges) {
           const bx = xOf(edge.ts);
-          const by = yOf(edge.lane_index);
+          const by = renderYOf(edge.lane_index);
           if (Math.abs(p.x - bx) <= 14 && Math.abs(p.y - (by - 22)) <= 14) {
             tooltip.style.left = `${p.sx}px`;
             tooltip.style.top = `${p.sy}px`;
@@ -514,7 +556,7 @@
           let hit = null;
           for (const node of hoverNodes) {
             const dx = p.x - xOf(node.ts);
-            const dy = p.y - yOf(node.lane_index);
+            const dy = p.y - renderYOf(node.lane_index);
             if ((dx * dx + dy * dy) <= 550) {
               hit = node;
               break;
