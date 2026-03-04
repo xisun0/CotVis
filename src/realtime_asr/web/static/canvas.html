@@ -256,6 +256,7 @@
       let baseNodes = [];
       let baseEdges = [];
       let latestByConcept = new Map();  // concept_id → latest node in window
+      let conceptWindowScore = new Map(); // concept_id -> aggregated score in window
 
       function sizeCanvases() {
         const rect = viewport.getBoundingClientRect();
@@ -292,6 +293,7 @@
         for (const node of baseNodes) {
           const prev = latestByConcept.get(node.id);
           if (!prev || node.ts > prev.ts) latestByConcept.set(node.id, node);
+          conceptWindowScore.set(node.id, (conceptWindowScore.get(node.id) || 0) + Number(node.score || 0));
         }
       }
 
@@ -349,21 +351,44 @@
         }
 
         let labelNodes = [];
+        const rankedConcepts = [...latestByConcept.keys()]
+          .sort((a, b) => (conceptWindowScore.get(b) || 0) - (conceptWindowScore.get(a) || 0) || a.localeCompare(b));
         if (level === "high") {
-          labelNodes = [...latestByConcept.values()].sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+          labelNodes = rankedConcepts.map((id) => latestByConcept.get(id)).filter(Boolean);
         } else if (level === "mid") {
-          labelNodes = [...latestByConcept.values()]
-            .sort((a, b) => b.score - a.score || a.id.localeCompare(b.id))
+          labelNodes = rankedConcepts
+            .map((id) => latestByConcept.get(id))
+            .filter(Boolean)
             .slice(0, 10);
         }
         if (labelNodes.length) {
-          nodesCtx.fillStyle = "rgba(31,42,51,0.86)";
-          nodesCtx.font = `${12 / Math.max(transform.k, 0.35)}px Avenir Next, Trebuchet MS, sans-serif`;
+          const fontPx = 14 / Math.max(transform.k, 0.45);
+          nodesCtx.font = `${fontPx}px Avenir Next, Trebuchet MS, sans-serif`;
+          nodesCtx.lineJoin = "round";
           for (const node of labelNodes) {
             const x = xOf(node.ts);
             const y = yOf(node.lane_index);
             const r = Math.max(4, Math.sqrt(Math.max(node.score, 0.0001)) * BASE_R * 2.0);
-            nodesCtx.fillText(node.display, x + r + 3, y - 3);
+            const text = node.display;
+            const tx = x + r + 8;
+            const ty = y - 4;
+            const m = nodesCtx.measureText(text);
+            const padX = 4 / Math.max(transform.k, 0.45);
+            const padY = 2 / Math.max(transform.k, 0.45);
+            const boxH = fontPx + padY * 2;
+            nodesCtx.strokeStyle = "rgba(255,255,255,0.9)";
+            nodesCtx.lineWidth = 5 / Math.max(transform.k, 0.45);
+            nodesCtx.beginPath();
+            nodesCtx.moveTo(x + r, y);
+            nodesCtx.lineTo(tx - 4, y);
+            nodesCtx.stroke();
+            nodesCtx.fillStyle = "rgba(255,255,255,0.72)";
+            nodesCtx.fillRect(tx - padX, ty - fontPx + padY, m.width + padX * 2, boxH);
+            nodesCtx.strokeStyle = "rgba(255,255,255,0.92)";
+            nodesCtx.lineWidth = 3.5 / Math.max(transform.k, 0.45);
+            nodesCtx.strokeText(text, tx, ty);
+            nodesCtx.fillStyle = "rgba(21,28,35,0.98)";
+            nodesCtx.fillText(text, tx, ty);
           }
         }
         trailsCtx.restore();
