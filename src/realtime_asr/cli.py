@@ -38,6 +38,12 @@ def build_parser() -> argparse.ArgumentParser:
         action=argparse.BooleanOptionalAction,
         default=True,
     )
+    parser.add_argument(
+        "--print-phase-summary",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Print each closed phase transcript and summary to terminal.",
+    )
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument("--serve-ui", action="store_true")
     parser.add_argument("--open-browser", action="store_true")
@@ -166,11 +172,21 @@ def main() -> int:
                     lane_assigner=manager.lane_assigner,
                     registry=manager.concept_registry,
                 )
+            if args.print_phase_summary and top_terms.closed_phase is not None:
+                p = top_terms.closed_phase
+                print(f"[PHASE CLOSED] #{p.phase_id} ({p.ts_start:.2f} -> {p.ts_end:.2f})")
+                print(f"[PHASE TRANSCRIPT] {p.transcript or '(empty)'}")
+                print(f"[PHASE SUMMARY] {p.summary}")
             if args.jsonl:
                 print(json.dumps(payload, ensure_ascii=False))
     except KeyboardInterrupt:
         pass
     finally:
+        final_report = manager.finalize_current_phase_report(time.time())
+        if args.print_phase_summary and final_report is not None:
+            print(f"[PHASE CLOSED] #{final_report.phase_id} ({final_report.ts_start:.2f} -> {final_report.ts_end:.2f})")
+            print(f"[PHASE TRANSCRIPT] {final_report.transcript or '(empty)'}")
+            print(f"[PHASE SUMMARY] {final_report.summary}")
         backend.stop()
         if web_server is not None:
             web_server.stop()

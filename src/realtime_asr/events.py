@@ -22,6 +22,7 @@ class TopTermsEvent:
     phase: Phase | None = None
     transition: PhaseTransition | None = None
     phases: list[Phase] | None = None
+    closed_phase: ClosedPhaseReport | None = None
 
 
 @dataclass(slots=True)
@@ -59,3 +60,12 @@ class Phase:
     lane_max: int
     label: str | None
     centroid: list[tuple[str, float]] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class ClosedPhaseReport:
+    phase_id: int
+    ts_start: float
+    ts_end: float
+    transcript: str
+    summary: str
