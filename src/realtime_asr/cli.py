@@ -1,216 +1,149 @@
 from __future__ import annotations
 
 import argparse
-import json
-import platform
-import sys
-import time
-import webbrowser
+from pathlib import Path
 
-from realtime_asr.asr_backend import MacSpeechBackend
-from realtime_asr.asr_backend.mac_speech import MacSpeechBackendError
-from realtime_asr.context.manager import ContextManager
-from realtime_asr.events import TranscriptEvent
-from realtime_asr.lm import LocalLLMReranker
-from realtime_asr.web import TopTermsWebServer
-
-try:
-    import CoreFoundation
-except Exception:  # pragma: no cover
-    CoreFoundation = None
+from realtime_asr.document.loader import load_document
+from realtime_asr.runtime.session import ReviewSession
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Realtime ASR MVP CLI")
-    parser.add_argument("--lang", default="en-US")
-    parser.add_argument("--update-interval", type=float, default=2.0)
-    parser.add_argument("--final-window", type=int, default=60)
-    parser.add_argument("--full-session", action="store_true", help="Use all FINAL transcript from session (no final window pruning).")
-    parser.add_argument("--partial-window", type=int, default=10)
-    parser.add_argument("--top-k", type=int, default=60)
-    parser.add_argument(
-        "--print-transcript",
-        action=argparse.BooleanOptionalAction,
-        default=True,
+    parser = argparse.ArgumentParser(
+        description="Voice-first manuscript review CLI for Markdown documents.",
     )
-    parser.add_argument(
-        "--jsonl",
-        action=argparse.BooleanOptionalAction,
-        default=True,
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    review = subparsers.add_parser(
+        "review",
+        help="Open a document review session.",
     )
-    parser.add_argument(
-        "--print-phase-summary",
-        action=argparse.BooleanOptionalAction,
-        default=False,
-        help="Print each closed phase transcript and summary to terminal.",
-    )
-    parser.add_argument("--verbose", action="store_true")
-    parser.add_argument("--serve-ui", action="store_true")
-    parser.add_argument("--open-browser", action="store_true")
-    parser.add_argument("--ui-host", default="127.0.0.1")
-    parser.add_argument("--ui-port", type=int, default=8765)
-    parser.add_argument(
-        "--canvas-top-n",
+    review.add_argument("path", help="Path to a Markdown document.")
+    review.add_argument(
+        "--start-paragraph",
         type=int,
-        default=15,
-        help="Active concept cap per snapshot used for lane assignment and canvas nodes.",
+        default=1,
+        help="1-based paragraph index to start from.",
     )
-    parser.add_argument("--llm-model", default=None, help="Local GGUF model path for optional LLM reranking.")
-    parser.add_argument("--llm-interval", type=float, default=12.0)
-    parser.add_argument("--llm-weight", type=float, default=2.0)
-    parser.add_argument("--llm-top-k", type=int, default=30)
-    parser.add_argument("--llm-ctx", type=int, default=2048)
-    parser.add_argument("--llm-max-tokens", type=int, default=420)
-    parser.add_argument("--llm-primary", action=argparse.BooleanOptionalAction, default=True)
-    parser.add_argument("--llm-only", action=argparse.BooleanOptionalAction, default=False)
+    review.add_argument(
+        "--match",
+        default=None,
+        help="Optional text fragment used to locate a starting paragraph.",
+    )
+    review.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print the resolved session target without starting voice features.",
+    )
+
+    subparsers.add_parser(
+        "plan",
+        help="Print the current development plan path.",
+    )
     return parser
 
 
 def main() -> int:
     args = build_parser().parse_args()
 
-    llm_reranker = None
-    if args.llm_model:
-        try:
-            llm_reranker = LocalLLMReranker(
-                model_path=args.llm_model,
-                n_ctx=args.llm_ctx,
-                max_tokens=args.llm_max_tokens,
-                temperature=0.0,
-            )
-        except Exception as exc:
-            print(f"Failed to initialize local LLM reranker: {exc}", file=sys.stderr)
-            return 1
-    if args.llm_only and llm_reranker is None:
-        print("--llm-only requires --llm-model to be set.", file=sys.stderr)
-        return 1
+    if args.command == "plan":
+        print("docs/voice_review_cli_development_plan.md")
+        return 0
 
-    final_window_sec = 0 if args.full_session else args.final_window
-
-    manager = ContextManager(
-        final_window_sec=final_window_sec,
-        partial_window_sec=args.partial_window,
-        top_k=args.top_k,
-        llm_reranker=llm_reranker,
-        llm_interval_sec=args.llm_interval,
-        llm_weight=args.llm_weight,
-        llm_top_k=args.llm_top_k,
-        llm_only=args.llm_only,
-        llm_primary=(args.llm_primary and llm_reranker is not None),
-        canvas_top_n=args.canvas_top_n,
+    path = Path(args.path).expanduser().resolve()
+    document = load_document(path)
+    session = ReviewSession.start(
+        document=document,
+        start_paragraph=max(1, int(args.start_paragraph)),
+        match_text=args.match,
     )
 
-    backend = MacSpeechBackend(lang=args.lang, verbose=args.verbose)
-    web_server: TopTermsWebServer | None = None
+    if args.dry_run:
+        _print_dry_run_preview(document=document, session=session, args=args)
+        return 0
 
-    if args.serve_ui:
-        web_server = TopTermsWebServer(
-            host=args.ui_host,
-            port=args.ui_port,
-            canvas_top_n=args.canvas_top_n,
-        )
-        try:
-            web_server.start()
-        except OSError as exc:
-            print(
-                f"Failed to start web UI server on {args.ui_host}:{args.ui_port}: {exc}",
-                file=sys.stderr,
-            )
-            return 1
-        print(f"[CLI] Word cloud UI: {web_server.url()}")
-        if args.open_browser:
-            webbrowser.open(web_server.url(), new=1, autoraise=True)
-    last_event_ts = time.time()
-
-    def on_event(event: TranscriptEvent) -> None:
-        nonlocal last_event_ts
-        last_event_ts = event.ts
-        manager.on_event(event)
-        if args.print_transcript:
-            tag = "FINAL" if event.is_final else "PARTIAL"
-            print(f"[{tag}] {event.text}")
-
-    try:
-        backend.start(on_event)
-    except MacSpeechBackendError as exc:
-        print(f"Failed to start backend: {exc}", file=sys.stderr)
-        return 1
-        if args.verbose:
-            print("[CLI] Backend started. Waiting for speech...")
-            if args.llm_model:
-                print(f"[CLI] Local LLM rerank enabled: {args.llm_model}")
-            if args.llm_only:
-                print("[CLI] LLM-only mode enabled: base term scoring is disabled.")
-
-    try:
-        while True:
-            _wait_interval(args.update_interval)
-            if not backend.is_running():
-                err = backend.get_last_error()
-                if err:
-                    print(f"Backend stopped: {err}", file=sys.stderr)
-                else:
-                    print("Backend stopped.", file=sys.stderr)
-                return 1
-            if args.verbose and (time.time() - last_event_ts) > 10.0:
-                stats = backend.get_debug_stats()
-                print(
-                    "[CLI] No transcript in 10s. "
-                    f"audio_buffers={int(stats['audio_buffer_count'])}, "
-                    f"recognizer_callbacks={int(stats['result_callback_count'])}"
-                )
-            top_terms = manager.compute_top_terms()
-            payload = {
-                "ts": top_terms.ts,
-                "window_sec": top_terms.window_sec,
-                "top_k": top_terms.top_k,
-                "terms": top_terms.terms,
-            }
-            if web_server is not None:
-                web_server.update(
-                    top_terms,
-                    lane_assigner=manager.lane_assigner,
-                    registry=manager.concept_registry,
-                )
-            if args.print_phase_summary and top_terms.closed_phase is not None:
-                p = top_terms.closed_phase
-                print(f"[PHASE CLOSED] #{p.phase_id} ({p.ts_start:.2f} -> {p.ts_end:.2f})")
-                print(f"[PHASE TRANSCRIPT] {p.transcript or '(empty)'}")
-                print(f"[PHASE SUMMARY] {p.summary}")
-            if args.jsonl:
-                print(json.dumps(payload, ensure_ascii=False))
-    except KeyboardInterrupt:
-        pass
-    finally:
-        final_report = manager.finalize_current_phase_report(time.time())
-        if args.print_phase_summary and final_report is not None:
-            print(f"[PHASE CLOSED] #{final_report.phase_id} ({final_report.ts_start:.2f} -> {final_report.ts_end:.2f})")
-            print(f"[PHASE TRANSCRIPT] {final_report.transcript or '(empty)'}")
-            print(f"[PHASE SUMMARY] {final_report.summary}")
-        backend.stop()
-        if web_server is not None:
-            web_server.stop()
-
+    print(f"[session] document={document.path}")
+    print(f"[session] paragraphs={len(document.paragraphs)}")
+    print(f"[session] readable_paragraphs={len(document.readable_paragraphs)}")
+    print(f"[session] state={session.state.value}")
+    print(f"[session] current_paragraph={session.current_paragraph.index}")
+    print(f"[session] current_paragraph_id={session.anchor.paragraph_id}")
+    print(f"[session] current_sentence_id={session.anchor.sentence_id}")
+    print(f"[session] anchor_fallback={session.anchor.fallback_direction}")
+    print("[todo] Phase 0 skeleton is ready.")
+    print("[todo] Reading, voice commands, and review flow start in Phase 1+.")
     return 0
 
 
-def _wait_interval(seconds: float) -> None:
-    if seconds <= 0:
-        return
-    if platform.system() != "Darwin" or CoreFoundation is None:
-        time.sleep(seconds)
-        return
+def _print_dry_run_preview(document, session, args) -> None:
+    kind_counts = document.kind_counts()
+    print("[document]")
+    print(f"path={document.path}")
+    print(f"paragraphs={len(document.paragraphs)}")
+    print(f"readable_paragraphs={len(document.readable_paragraphs)}")
+    print(f"primary_paragraphs={len(document.primary_paragraphs)}")
+    print(f"secondary_paragraphs={len(document.secondary_paragraphs)}")
+    print(f"kind_counts={kind_counts}")
+    print("")
 
-    deadline = time.monotonic() + seconds
-    while True:
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            return
-        CoreFoundation.CFRunLoopRunInMode(
-            CoreFoundation.kCFRunLoopDefaultMode,
-            min(remaining, 0.2),
-            False,
-        )
+    print("[start]")
+    if args.match:
+        reason = f'matched readable paragraph containing "{args.match}"'
+    elif int(args.start_paragraph) > 1:
+        reason = f"selected preferred paragraph #{int(args.start_paragraph)}"
+    else:
+        reason = "first primary paragraph after skipped or secondary front matter"
+    print(f"reason={reason}")
+    print(f"paragraph_id={session.anchor.paragraph_id}")
+    print(f"sentence_id={session.anchor.sentence_id}")
+    print(f"anchor_fallback={session.anchor.fallback_direction}")
+    print("")
+
+    print("[current]")
+    print(f"index={session.current_paragraph.index}")
+    print(f"id={session.current_paragraph.id}")
+    print(f"kind={session.current_paragraph.kind}")
+    print(f"readable={session.current_paragraph.readable}")
+    print(f"reading_priority={session.current_paragraph.reading_priority}")
+    print(f"sentences={len(session.current_paragraph.sentences)}")
+    print(f"anchor_paragraph_index={session.anchor.last_known_paragraph_index}")
+    print(f"anchor_sentence_index={session.anchor.last_known_sentence_index}")
+    print("")
+
+    for sentence in session.current_paragraph.sentences[:3]:
+        print(f"[sentence {sentence.index}]")
+        print(f"id={sentence.id}")
+        print(sentence.text)
+        print("")
+
+    previous_paragraph = _neighbor_paragraph(document, session.current_paragraph.index, -1)
+    next_paragraph = _neighbor_paragraph(document, session.current_paragraph.index, 1)
+    if previous_paragraph is not None:
+        print("[previous]")
+        print(f"index={previous_paragraph.index}")
+        print(f"id={previous_paragraph.id}")
+        print(f"kind={previous_paragraph.kind}")
+        print(f"readable={previous_paragraph.readable}")
+        print(f"reading_priority={previous_paragraph.reading_priority}")
+        if previous_paragraph.skip_reason:
+            print(f"skip_reason={previous_paragraph.skip_reason}")
+        print("")
+    if next_paragraph is not None:
+        print("[next]")
+        print(f"index={next_paragraph.index}")
+        print(f"id={next_paragraph.id}")
+        print(f"kind={next_paragraph.kind}")
+        print(f"readable={next_paragraph.readable}")
+        print(f"reading_priority={next_paragraph.reading_priority}")
+        if next_paragraph.skip_reason:
+            print(f"skip_reason={next_paragraph.skip_reason}")
+        print("")
+
+
+def _neighbor_paragraph(document, current_index: int, offset: int):
+    target = current_index + offset
+    if target < 1 or target > len(document.paragraphs):
+        return None
+    return document.paragraphs[target - 1]
 
 
 if __name__ == "__main__":

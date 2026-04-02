@@ -1,1 +1,1 @@
-"""Realtime ASR MVP package."""
+"""Voice-first manuscript review CLI."""
