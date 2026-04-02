@@ -1,41 +1,60 @@
-# CotVis — Chain-of-Thought Visualization
+# Voice Review CLI
 
-## Ultimate Goal
+## Overview
 
-When a person speaks, their ideas do not arrive all at once — they unfold, shift, and build on each other over time. CotVis makes that process visible to an audience in real time.
+This repository is being rebuilt as a voice-first manuscript review CLI.
 
-The ultimate goal is a **standalone tool that visualizes the live chain of thought of a human speaker** — not just which topics are present, but how concepts emerge, gain weight, fade, and connect as the talk or conversation progresses. An audience watching the visualization should be able to follow the arc of the speaker's thinking without reading a transcript.
+The target workflow is:
 
-This goes beyond a static word cloud. The envisioned end state is a display that communicates:
+1. Open a document review session from the terminal.
+2. Let the system read a manuscript aloud from the beginning or a chosen starting point.
+3. Interrupt by voice when a sentence or paragraph needs revision.
+4. Review candidate rewrites.
+5. Apply a local patch and continue reading.
 
-- **What** the speaker is currently focused on
-- **How** the focus has shifted since they began
-- **Which concepts are rising or fading** in the current flow of speech
+The current codebase is in early rebuild status.
 
-## Roadmap
+- Phase 0 is complete: old ASR/visualization code has been removed and a new package skeleton is in place.
+- Phase 1 is complete: Markdown parsing, paragraph classification, stable IDs, reading anchors, and a structured dry-run preview are working.
+- Phase 2 is complete: sentence-level reading runtime, terminal interaction, section announcements, navigation commands, and TTS demo backends are working.
+- ASR command capture and the live review loop are not implemented yet.
 
-| Phase | Focus | Delivers |
-|---|---|---|
-| **1 — Signal correctness** | Fix stable-text diff logic; add deterministic replay tests | Trustworthy term weights as foundation for everything above |
-| **2 — Concept state model** | Introduce per-term history: score, velocity, age, source | Backend knows whether each concept is new, rising, stable, or fading |
-| **3 — Concept quality** | Move beyond word frequency: phrase chunking, named entities | The right concepts are tracked, not just the most frequent words |
-| **4 — Shift & connection detection** | Co-occurrence graph; structured events (`focus_changed`, `concept_rising`, `concept_fading`) | Backend emits semantic events the UI can act on directly |
-| **5 — Flow visualization** | 3-panel UI: current focus + trend timeline + concept-link graph; push transport (SSE/WebSocket) | Audience can see *what*, *how*, and *which* concepts are moving |
-| **6 — Evaluation & hardening** | Replay benchmark set; measurable targets for latency, trend stability, false shift rate | Demonstrated, reliable quality ahead of live use |
+## Current Scope
 
-Productization (config profiles, export, cross-platform backend) is deferred until after Phase 6.
+### Implemented
 
-## Current Stage (MVP)
+- Markdown and plain-text document loading
+- Paragraph segmentation
+- Conservative sentence segmentation
+- Paragraph classification
+- Reading priority model:
+  - `primary`
+  - `secondary`
+  - `skip`
+- Stable paragraph and sentence IDs inside the current document graph
+- Anchor-oriented session bootstrap
+- Structured dry-run preview for validation
+- Sentence-by-sentence reading demo
+- Interactive terminal demo for reading controls
+- Section and abstract announcements before reading new parts
+- Paragraph / subsection / section navigation in the interactive demo
+- Demo TTS backends:
+  - `none`
+  - `console`
+  - `system`
 
-This repository hosts an MVP for:
+### Not Yet Implemented
 
-`macOS Speech Framework streaming ASR -> context management -> TopTerms JSONL`
+- Voice interruption
+- Rewrite generation with real model calls
+- Patch application to the document graph
+- Resume-after-edit behavior
 
 ## Requirements
 
-- macOS 13+
 - Python 3.11+
-- Microphone + Speech Recognition permissions
+- `pytest` for local validation
+- `pandoc` only if you want to generate Markdown test material from LaTeX yourself
 
 ## Setup
 
@@ -49,188 +68,151 @@ Optional beginner-friendly git setup:
 make setup-local
 ```
 
-This configures a commit message template (`.gitmessage.txt`) for this repo.
-You can also print commit examples with:
+## Main Demo
+
+The current Phase 1 demo is the structured dry-run preview.
+
+Run the real sample:
 
 ```bash
-make commit-help
+make run ARGS="review examples/research_article_sample.md --dry-run"
 ```
 
-## Run
+This prints:
+
+- document summary
+- paragraph counts
+- reading-priority counts
+- chosen starting point
+- current anchor state
+- current paragraph preview
+- neighboring skipped/readable blocks
+
+Example alternate entrypoints:
 
 ```bash
-make run
+make run ARGS="review examples/research_article_sample.md --dry-run --match 'Industrial policy—targeted government interventions'"
+make run ARGS="review examples/research_article_sample.md --dry-run --start-paragraph 3"
 ```
 
-Default CLI behavior:
+## Reading Demo
 
-- prints transcript updates (`[PARTIAL] ...` / `[FINAL] ...`)
-- prints one TopTerms JSON line every 2 seconds
-- term ranking uses a local LM-style scorer to downweight generic words and surface more meaningful topic terms
+Phase 2 adds a sentence-by-sentence reading runtime demo.
 
-Useful switches:
-
-- `--lang en-US` (default) or `--lang zh-CN`
-- `--no-print-transcript` to hide transcript logs
-- `--no-jsonl` to hide top-term JSON output
-- `--update-interval`, `--final-window`, `--partial-window`, `--top-k`
-- `--full-session` to keep all FINAL transcript from the whole session (no 60s pruning)
-
-## Optional Local LLM Reranking
-
-You can enable a local instruct model (GGUF) to refine topic terms:
+Run a non-speaking version:
 
 ```bash
-pip install -e ".[llm]"
-make run-web PYTHON=python3.11 ARGS="--llm-model /path/to/model.gguf --open-browser"
+make run ARGS="review examples/research_article_sample.md --read-demo --max-sentences 5 --tts none"
 ```
 
-Recommended small models:
-
-- Qwen2.5-3B-Instruct (GGUF)
-- Llama-3.2-3B-Instruct (GGUF)
-
-Useful controls:
-
-- `--llm-interval` (default 12s): how often to query local LLM
-- `--llm-weight` (default 2.0): blend strength of LLM suggestions
-- `--llm-top-k` (default 30): max LLM terms
-- `--llm-ctx` (default 2048): context size for llama.cpp
-
-Optional local path management (`.env.local`, untracked):
+Run a simple terminal-controlled interactive version:
 
 ```bash
-cat > .env.local <<'EOF'
-LLM_MODEL_PATH=/path/to/model.gguf
-EOF
-set -a; source .env.local; set +a
-make test-nlp PYTHON=python3.11 ARGS="--llm-model $LLM_MODEL_PATH --llm-primary --open-browser"
+make run ARGS="review examples/research_article_sample.md --interactive-demo --tts none"
 ```
-- `--llm-max-tokens` (default 420): max tokens in LLM response
-- `--llm-primary` / `--no-llm-primary` (default on): when enabled, LLM scores replace rather than augment the frequency-based ranking
 
-## Run With Live Word Cloud
+The reading demos now announce structural markers before prose when available, for example:
+
+- `Abstract`
+- `1 Introduction`
+- `1.1 Background`
+
+Supported interactive commands:
+
+- `pause`
+- `resume`
+- `next`
+- `previous`
+- `again`
+- `paragraph`
+- `next paragraph`
+- `previous paragraph`
+- `next subsection`
+- `previous subsection`
+- `next section`
+- `previous section`
+- `status`
+- `jump paragraph N`
+- `jump match TEXT`
+- `help`
+- `quit`
+
+Current jump behavior:
+
+- `jump paragraph N` jumps to the `N`th preferred paragraph in the reading flow
+- `jump match TEXT` currently jumps to the first readable paragraph that contains the given text
+- multi-candidate disambiguation is not implemented yet
+- `next/previous subsection` use the current finest section path rather than a hard-coded heading depth
+- `next/previous section` use the top-level section path
+
+Command semantics:
+
+- `previous` moves back one sentence and rereads it
+- `again` rereads the current sentence without moving the anchor
+- `paragraph` rereads the full current paragraph from the beginning without moving the anchor
+- `next paragraph` and `previous paragraph` jump between readable paragraphs
+- `next subsection` and `previous subsection` move across the current finest subsection boundary
+- `next section` and `previous section` move across top-level sections
+
+## Testing
+
+Run the current automated checks:
 
 ```bash
-make run-web
+make test
 ```
 
-One-command demo (start server + open browser + play sample audio + stop):
+Current tests cover:
 
-```bash
-make demo PYTHON=python3.11
-```
+- Markdown loading
+- paragraph kind classification
+- start-paragraph location
+- anchor bootstrap
+- reading progression
+- pause/resume/repeat
+- paragraph/subsection/section navigation
+- section and abstract announcement behavior
+- jump paragraph and jump match behavior
+- patch-target skeleton behavior
 
-Note: this still uses microphone input. Keep speaker volume audible so the mic can capture playback.
+## Key Sample
 
-By default this starts a local UI server at:
+The main realistic test sample is:
 
-`http://127.0.0.1:8765`
+- [examples/research_article_sample.md](/Users/sxi/SunXi/1-Research/14_CotVis/examples/research_article_sample.md)
 
-UI review pages:
+This sample was converted from a LaTeX research draft and intentionally retains structural noise such as wrappers and front matter, which makes it useful for parser validation.
 
-- Active page: `http://127.0.0.1:8765/wordcloud.html`
-- Baseline snapshot: `http://127.0.0.1:8765/wordcloud_v1_baseline.html`
-- Refined snapshot: `http://127.0.0.1:8765/wordcloud_v2_refined.html`
-- Final snapshot: `http://127.0.0.1:8765/wordcloud_v3_final.html`
+## Design Notes
 
-Optional examples:
+Two planning documents are especially relevant:
 
-- Chinese ASR + web UI:
-  - `make run-web PYTHON=python3.11 ARGS="--lang zh-CN"`
-- Custom UI port:
-  - `make run-web PYTHON=python3.11 ARGS="--ui-port 8877"`
-- Auto-open browser:
-  - `make run-web PYTHON=python3.11 ARGS="--open-browser"`
+- [docs/voice_review_cli_development_plan.md](/Users/sxi/SunXi/1-Research/14_CotVis/docs/voice_review_cli_development_plan.md)
+- [docs/editing_identity_strategy.md](/Users/sxi/SunXi/1-Research/14_CotVis/docs/editing_identity_strategy.md)
+- [docs/navigation_and_jump_strategy.md](/Users/sxi/SunXi/1-Research/14_CotVis/docs/navigation_and_jump_strategy.md)
 
-## Regenerate Local Sample Audio
+The important architecture rule is:
 
-Sample text is stored in:
+- `index` is display order
+- `id` is object identity inside the current document graph
+- reading progress should be tracked by anchors, not raw indexes
 
-`examples/sample_script.txt`
+## Current Package Layout
 
-Regenerate WAV test audio anytime:
+- `src/realtime_asr/cli.py` — CLI entrypoint, dry-run preview, reading demo, interactive demo
+- `src/realtime_asr/document/` — document loading, parsing, locating, models
+- `src/realtime_asr/runtime/` — session bootstrap, reading navigator, and state machine
+- `src/realtime_asr/review/` — placeholder review interfaces
+- `src/realtime_asr/patching/` — patch-target skeleton
+- `src/realtime_asr/voice/` — demo TTS backends and future voice adapters
+- `tests/` — Phase 1 and Phase 2 tests
 
-```bash
-make sample-wav
-```
+## Next Step
 
-This creates `examples/sample.wav` locally (not committed).
+The next implementation focus is the live review loop:
 
-## Two-Part Testing
-
-Deterministic local regression tests:
-
-```bash
-make test PYTHON=python3.11
-```
-
-1) Demo / ASR smoke test (starts server, plays sample audio via mic loopback, prints output):
-
-```bash
-make test-asr PYTHON=python3.11
-```
-
-2) Transcript-understanding test (simulated live stream from text):
-
-```bash
-make test-nlp PYTHON=python3.11
-```
-
-This second mode replays `examples/sample_script.txt` as a live transcript stream
-(`PARTIAL` + `FINAL`) and updates the same term pipeline/UI, without microphone dependency.
-
-## Quick Validation
-
-1. Run `make run`.
-2. If prompted, allow:
-   - Speech Recognition
-   - Microphone
-3. Speak continuously for ~20 seconds.
-4. Confirm terminal shows:
-   - transcript lines marked `PARTIAL` and `FINAL`
-   - JSON output every 2 seconds with changing `terms`
-5. Press `Ctrl+C` to stop.
-
-For web mode validation:
-
-1. Run `make run-web`.
-2. Open the printed URL in browser.
-3. Speak and confirm words resize/reflow every ~2 seconds without manual refresh.
-
-## macOS Permission Path
-
-If permission prompts were dismissed or denied, enable manually:
-
-- `System Settings -> Privacy & Security -> Microphone`
-- `System Settings -> Privacy & Security -> Speech Recognition`
-
-Then re-run `make run`.
-
-## Troubleshooting
-
-`Failed to start backend: Speech recognition permission is not granted`
-- Enable Speech Recognition permission in system settings and retry.
-
-`Failed to start backend: Microphone permission is not granted`
-- Enable Microphone permission in system settings and retry.
-
-`Failed to start backend: Speech recognizer is currently unavailable`
-- Check internet connectivity and macOS speech availability, then retry.
-
-`Failed to start backend: No audio input device found`
-- Connect/enable a microphone and verify system input device settings.
-
-## Package Layout
-
-- `src/realtime_asr/events.py` — `TranscriptEvent` and `TopTermsEvent` dataclasses
-- `src/realtime_asr/cli.py` — main entrypoint and run loop
-- `src/realtime_asr/simulate_transcript.py` — mic-free simulation mode from a text file
-- `src/realtime_asr/asr_backend/base.py` — backend interface
-- `src/realtime_asr/asr_backend/mac_speech.py` — macOS Speech Framework streaming backend
-- `src/realtime_asr/context/tokenizer.py` — tokenization and stopwords (EN + ZH)
-- `src/realtime_asr/context/manager.py` — rolling context window and TopTerms computation
-- `src/realtime_asr/lm/scorer.py` — Zipf-frequency downweighting and bigram phrase scoring
-- `src/realtime_asr/lm/llm_reranker.py` — optional local GGUF model reranking
-- `src/realtime_asr/web/server.py` — HTTP server serving `/terms` JSON and static UI
-- `src/realtime_asr/web/static/` — word cloud HTML pages
+- ASR command capture
+- spoken pause/resume/repeat/jump commands
+- review-mode transitions
+- rewrite candidate generation
+- local patch application and resume-after-edit

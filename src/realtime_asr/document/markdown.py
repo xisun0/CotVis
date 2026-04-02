@@ -36,10 +36,13 @@ def parse_markdown_text(text: str) -> list[Paragraph]:
                 text=paragraph_text,
                 readable=readable,
                 reading_priority=reading_priority,
+                heading_level=heading_level(paragraph_text) if kind == "heading" else None,
+                heading_text=extract_heading_text(paragraph_text) if kind == "heading" else extract_metadata_text(paragraph_text),
                 skip_reason=None if readable else explain_skip(kind, paragraph_text),
                 sentences=sentences,
             )
         )
+    assign_section_markers(paragraphs)
     return paragraphs
 
 
@@ -178,6 +181,82 @@ def looks_like_front_matter_metadata(text: str) -> bool:
         "wang renxuan is at",
     ]
     return any(marker in lowered for marker in markers)
+
+
+def heading_level(text: str) -> int:
+    stripped = text.strip()
+    match = re.match(r"^(#+)\s+", stripped)
+    if match is None:
+        return 1
+    return len(match.group(1))
+
+
+def extract_heading_text(text: str) -> str:
+    stripped = text.strip()
+    return re.sub(r"^#+\s+", "", stripped).strip()
+
+
+def metadata_marker_text(text: str) -> str | None:
+    stripped = extract_metadata_text(text) or ""
+    if stripped.lower() == "abstract":
+        return "Abstract"
+    return None
+
+
+def extract_metadata_text(text: str) -> str | None:
+    stripped = text.strip()
+    match = re.fullmatch(r"\*\*([^*]+)\*\*(\s{2,}.*)?", stripped)
+    if match is None:
+        return None
+    return match.group(1).strip()
+
+
+def assign_section_markers(paragraphs: list[Paragraph]) -> None:
+    counters: list[int] = []
+    current_marker_id: str | None = None
+    current_marker_label: str | None = None
+    heading_stack: list[tuple[int, str, str]] = []
+
+    for paragraph in paragraphs:
+        marker_label: str | None = None
+        if paragraph.kind == "heading" and paragraph.heading_text:
+            level = paragraph.heading_level or 1
+            while len(counters) < level:
+                counters.append(0)
+            counters = counters[:level]
+            counters[level - 1] += 1
+            for idx in range(level, len(counters)):
+                counters[idx] = 0
+            number = ".".join(str(value) for value in counters if value > 0)
+            marker_label = f"{number} {paragraph.heading_text}".strip()
+            heading_stack = [item for item in heading_stack if item[0] < level]
+            heading_stack.append((level, paragraph.id, marker_label))
+            paragraph.section_marker_id = paragraph.id
+            paragraph.section_marker_label = marker_label
+            paragraph.section_path_ids = [item[1] for item in heading_stack]
+            paragraph.section_path_labels = [item[2] for item in heading_stack]
+            paragraph.section_path_levels = [item[0] for item in heading_stack]
+            current_marker_id = paragraph.id
+            current_marker_label = marker_label
+            continue
+        metadata_marker = metadata_marker_text(paragraph.text)
+        if paragraph.kind == "metadata" and metadata_marker == "Abstract":
+            marker_label = "Abstract"
+            paragraph.section_marker_id = paragraph.id
+            paragraph.section_marker_label = marker_label
+            paragraph.section_path_ids = [paragraph.id]
+            paragraph.section_path_labels = [marker_label]
+            paragraph.section_path_levels = [0]
+            heading_stack = []
+            current_marker_id = paragraph.id
+            current_marker_label = marker_label
+            continue
+
+        paragraph.section_marker_id = current_marker_id
+        paragraph.section_marker_label = current_marker_label
+        paragraph.section_path_ids = [item[1] for item in heading_stack]
+        paragraph.section_path_labels = [item[2] for item in heading_stack]
+        paragraph.section_path_levels = [item[0] for item in heading_stack]
 
 
 def has_readable_text(text: str) -> bool:

@@ -33,7 +33,11 @@ def test_load_document_marks_html_wrappers_and_headings_as_non_readable(tmp_path
     assert document.paragraphs[0].kind == "html_block"
     assert document.paragraphs[0].readable is False
     assert document.paragraphs[1].kind == "heading"
+    assert document.paragraphs[1].heading_level == 1
+    assert document.paragraphs[1].heading_text == "Title"
+    assert document.paragraphs[1].section_marker_label == "1 Title"
     assert document.paragraphs[1].readable is False
+    assert document.readable_paragraphs[0].section_marker_label == "1 Title"
     assert document.readable_paragraphs[0].text == "Actual prose starts here. Another sentence."
 
 
@@ -47,10 +51,29 @@ def test_load_document_marks_short_centered_metadata_as_non_readable(tmp_path: P
     document = load_document(path)
 
     assert document.paragraphs[0].kind == "metadata"
+    assert document.paragraphs[0].heading_text == "Paper Title"
     assert document.paragraphs[1].kind == "metadata"
     assert document.paragraphs[2].kind == "metadata"
     assert document.primary_paragraphs[0].text == "First body paragraph."
     assert document.readable_paragraphs[0].text == "First body paragraph."
+
+
+def test_load_document_assigns_abstract_marker_and_section_numbers(tmp_path: Path) -> None:
+    path = tmp_path / "draft.md"
+    path.write_text(
+        "**Abstract**\n\nAbstract body paragraph.\n\n# Introduction\n\nIntro paragraph.\n\n## Background\n\nBackground paragraph.",
+        encoding="utf-8",
+    )
+
+    document = load_document(path)
+
+    assert document.paragraphs[0].section_marker_label == "Abstract"
+    assert document.paragraphs[1].section_marker_label == "Abstract"
+    assert document.paragraphs[2].section_marker_label == "1 Introduction"
+    assert document.paragraphs[3].section_marker_label == "1 Introduction"
+    assert document.paragraphs[4].section_marker_label == "1.1 Background"
+    assert document.paragraphs[5].section_marker_label == "1.1 Background"
+    assert document.paragraphs[5].section_path_labels == ["1 Introduction", "1.1 Background"]
 
 
 def test_load_document_recognizes_list_quote_rule_and_code_fence(tmp_path: Path) -> None:

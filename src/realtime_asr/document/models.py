@@ -19,6 +19,13 @@ class Paragraph:
     text: str
     readable: bool
     reading_priority: str
+    heading_level: int | None = None
+    heading_text: str | None = None
+    section_marker_id: str | None = None
+    section_marker_label: str | None = None
+    section_path_ids: list[str] = field(default_factory=list)
+    section_path_labels: list[str] = field(default_factory=list)
+    section_path_levels: list[int] = field(default_factory=list)
     skip_reason: str | None = None
     sentences: list[Sentence] = field(default_factory=list)
 
