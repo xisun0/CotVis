@@ -187,6 +187,23 @@ def test_reading_runtime_section_navigation(tmp_path: Path) -> None:
     assert previous_section.id == "p2s1"
 
 
+def test_next_section_skips_front_matter_paragraphs_without_top_level_marker(tmp_path: Path) -> None:
+    path = tmp_path / "draft.md"
+    path.write_text(
+        "**Abstract**\n\nAbstract body.\n\nAuthor line.\n\nKeywords line.\n\n# Introduction\n\nIntro body.\n\n# Results\n\nResults body.",
+        encoding="utf-8",
+    )
+    document = load_document(path)
+    session = ReviewSession.start(document=document)
+
+    session.begin_reading()
+    next_section = session.next_section()
+
+    assert next_section is not None
+    assert next_section.id == "p6s1"
+    assert session.current_paragraph.section_marker_label == "1 Introduction"
+
+
 def test_reading_runtime_paragraph_navigation(tmp_path: Path) -> None:
     path = tmp_path / "draft.md"
     path.write_text("# One\n\nAlpha.\n\nBeta.\n\nGamma.", encoding="utf-8")

@@ -6,7 +6,10 @@ from pathlib import Path
 from realtime_asr.document.loader import load_document
 from realtime_asr.runtime.session import ReviewSession
 from realtime_asr.runtime.state_machine import SessionState
+from realtime_asr.voice.asr import OpenAITurnAsr, TypedTurnAsr
+from realtime_asr.voice.commands import classify_utterance
 from realtime_asr.voice.tts import ConsoleTextToSpeech, NullTextToSpeech, SystemTextToSpeech
+from realtime_asr.voice.turn_control import ExplicitTriggerTurnController
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -47,6 +50,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run an interactive terminal demo for reading controls.",
     )
     review.add_argument(
+        "--voice-demo",
+        action="store_true",
+        help="Run an explicit-trigger voice command demo.",
+    )
+    review.add_argument(
         "--max-sentences",
         type=int,
         default=5,
@@ -57,6 +65,36 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("console", "none", "system"),
         default="console",
         help="TTS backend for read-demo mode.",
+    )
+    review.add_argument(
+        "--asr",
+        choices=("typed", "openai"),
+        default="typed",
+        help="ASR backend for voice-demo mode.",
+    )
+    review.add_argument(
+        "--voice-listen-seconds",
+        type=float,
+        default=6.0,
+        help="Maximum recording duration for each explicit-trigger voice turn.",
+    )
+    review.add_argument(
+        "--voice-silence-seconds",
+        type=float,
+        default=0.8,
+        help="Silence duration that ends the current spoken command turn.",
+    )
+    review.add_argument(
+        "--voice-energy-threshold",
+        type=float,
+        default=0.005,
+        help="Energy threshold used to detect speech start and end.",
+    )
+    review.add_argument(
+        "--command-language",
+        choices=("auto", "zh", "en"),
+        default="auto",
+        help="Preferred language for spoken command recognition.",
     )
 
     subparsers.add_parser(
@@ -91,6 +129,10 @@ def main() -> int:
 
     if args.interactive_demo:
         _run_interactive_demo(session=session, args=args)
+        return 0
+
+    if args.voice_demo:
+        _run_voice_demo(session=session, args=args)
         return 0
 
     print(f"[session] document={document.path}")
@@ -211,7 +253,7 @@ def _run_interactive_demo(session, args) -> None:
     sentence = session.begin_reading()
 
     print("[interactive-demo]")
-    print("commands=pause,resume,next,previous,again,paragraph,next paragraph,previous paragraph,next subsection,previous subsection,next section,previous section,status,jump paragraph N,jump match TEXT,help,quit")
+    print("commands=pause/resume/next/... with English or Chinese aliases")
     print(f"tts={args.tts}")
     print("")
 
@@ -223,138 +265,235 @@ def _run_interactive_demo(session, args) -> None:
 
     while True:
         try:
-            raw = input("voice-review> ").strip().lower()
+            raw = input("voice-review> ").strip()
         except EOFError:
             print("")
             break
 
-        command = raw or "next"
-        if command == "help":
-            print("[help] pause resume next previous again paragraph next paragraph previous paragraph next subsection previous subsection next section previous section status jump paragraph N jump match TEXT quit")
+        classified = classify_utterance(raw)
+        if classified.kind == "request":
+            print("[interactive-demo] detected_request")
+            print("[interactive-demo] review_mode_not_implemented_yet")
             continue
-        if command == "status":
-            _print_status(session)
+        if classified.kind != "control" or classified.command is None:
+            print(f"[error] unknown_command={raw}")
             continue
-        if command.startswith("jump paragraph "):
-            value = command.removeprefix("jump paragraph ").strip()
-            if not value.isdigit():
-                print(f"[error] invalid_jump_paragraph={value}")
-                continue
-            try:
-                sentence = session.jump_to_paragraph(int(value))
-            except ValueError as exc:
-                print(f"[error] {exc}")
-                continue
-            if sentence is None:
-                print("[error] jump_target_has_no_sentence")
-                continue
-            _emit_sentence(session, sentence, tts)
-            continue
-        if command.startswith("jump match "):
-            value = raw[len("jump match ") :].strip()
-            if not value:
-                print("[error] empty_jump_match")
-                continue
-            try:
-                sentence = session.jump_to_match(value)
-            except ValueError as exc:
-                print(f"[error] {exc}")
-                continue
-            if sentence is None:
-                print("[error] jump_target_has_no_sentence")
-                continue
-            _emit_sentence(session, sentence, tts)
-            continue
-        if command == "pause":
-            session.pause()
-            print(f"[status] state={session.state.value}")
-            continue
-        if command == "resume":
-            sentence = session.resume()
-            print(f"[status] state={session.state.value}")
-            if sentence is not None:
-                _emit_sentence(session, sentence, tts)
-            continue
-        if command == "previous":
-            sentence = session.repeat_previous()
-            if sentence is not None:
-                print(f"[status] state={session.state.value}")
-                _emit_sentence(session, sentence, tts)
-            continue
-        if command == "again":
-            sentence = session.replay_current()
-            if sentence is not None:
-                print(f"[status] state={session.state.value}")
-                _emit_sentence(session, sentence, tts)
-            continue
-        if command == "paragraph":
-            sentences = session.replay_paragraph()
-            print(f"[status] state={session.state.value}")
-            if not sentences:
-                print("[error] current_paragraph_has_no_sentences")
-                continue
-            for sentence in sentences:
-                _emit_paragraph_replay_sentence(session, sentence, tts)
-            continue
-        if command == "next paragraph":
-            sentence = session.next_paragraph()
-            if sentence is None:
-                print("[error] no_next_paragraph")
-                continue
-            _emit_sentence(session, sentence, tts)
-            continue
-        if command == "previous paragraph":
-            sentence = session.previous_paragraph()
-            if sentence is None:
-                print("[error] no_previous_paragraph")
-                continue
-            _emit_sentence(session, sentence, tts)
-            continue
-        if command == "next subsection":
-            sentence = session.next_subsection()
-            if sentence is None:
-                print("[error] no_next_subsection")
-                continue
-            _emit_sentence(session, sentence, tts)
-            continue
-        if command == "previous subsection":
-            sentence = session.previous_subsection()
-            if sentence is None:
-                print("[error] no_previous_subsection")
-                continue
-            _emit_sentence(session, sentence, tts)
-            continue
-        if command == "next section":
-            sentence = session.next_section()
-            if sentence is None:
-                print("[error] no_next_section")
-                continue
-            _emit_sentence(session, sentence, tts)
-            continue
-        if command == "previous section":
-            sentence = session.previous_section()
-            if sentence is None:
-                print("[error] no_previous_section")
-                continue
-            _emit_sentence(session, sentence, tts)
-            continue
-        if command == "next":
-            if session.state is SessionState.PAUSED:
-                print("[status] state=paused command_ignored=next")
-                continue
-            sentence = session.advance()
-            if sentence is None:
-                print(f"[status] state={session.state.value}")
-                if session.state is SessionState.COMPLETED:
-                    print("[interactive-demo] reached end of readable content")
-                    break
-                continue
-            _emit_sentence(session, sentence, tts)
-            continue
-        if command == "quit":
+        if _execute_control_command(
+            session=session,
+            tts=tts,
+            command=classified.command.name,
+            argument=classified.command.argument,
+            mode_label="interactive-demo",
+        ):
             print("[interactive-demo] quitting")
             break
-        print(f"[error] unknown_command={command}")
+
+
+def _run_voice_demo(session, args) -> None:
+    tts = _build_tts_backend(args.tts)
+    turn_controller = ExplicitTriggerTurnController()
+    asr = _build_asr_backend(args)
+    sentence = session.begin_reading()
+
+    print("[voice-demo]")
+    print("trigger=press Enter to capture one spoken command turn")
+    print("special=:skip to keep reading, :quit to exit")
+    print(f"tts={args.tts}")
+    print(f"asr={args.asr}")
+    print(f"command_language={args.command_language}")
+    if args.asr == "openai":
+        print(
+            f"voice_turn=max {float(args.voice_listen_seconds):.1f}s, "
+            f"silence_stop {float(args.voice_silence_seconds):.1f}s"
+        )
+    print("")
+
+    if sentence is None:
+        print("[voice-demo] no readable sentence found")
+        return
+
+    _emit_sentence(session, sentence, tts)
+
+    while True:
+        decision = turn_controller.wait_for_trigger()
+        if decision.action == "quit":
+            print("[voice-demo] quitting")
+            break
+        if decision.action == "unknown":
+            print(f"[voice-demo] invalid_trigger={decision.raw}")
+            continue
+        if decision.action == "skip":
+            if _execute_control_command(
+                session=session,
+                tts=tts,
+                command="next",
+                argument=None,
+                mode_label="voice-demo",
+            ):
+                print("[voice-demo] quitting")
+                break
+            continue
+
+        try:
+            turn = asr.capture_turn()
+        except RuntimeError as exc:
+            print(f"[voice-demo] asr_error={exc}")
+            continue
+        if turn is None:
+            print("[voice-demo] no speech detected")
+            continue
+
+        print(f"[transcript] {turn.transcript}")
+        classified = classify_utterance(turn.transcript)
+        if classified.kind == "request":
+            print("[voice-demo] detected_request")
+            print("[voice-demo] review_mode_not_implemented_yet")
+            continue
+        if classified.kind != "control" or classified.command is None:
+            print("[voice-demo] unsupported_spoken_command")
+            continue
+        print(f"[command] {classified.command.name}")
+        if classified.command.argument is not None:
+            print(f"[command-argument] {classified.command.argument}")
+
+        if _execute_control_command(
+            session=session,
+            tts=tts,
+            command=classified.command.name,
+            argument=classified.command.argument,
+            mode_label="voice-demo",
+        ):
+            print("[voice-demo] quitting")
+            break
+
+
+def _execute_control_command(session, tts, command: str, argument: str | None, mode_label: str) -> bool:
+    if command == "help":
+        print("[help] pause resume next previous again paragraph next paragraph previous paragraph next subsection previous subsection next section previous section status jump paragraph N jump match TEXT quit")
+        return False
+    if command == "status":
+        _print_status(session)
+        return False
+    if command == "jump paragraph":
+        value = (argument or "").strip()
+        if not value.isdigit():
+            print(f"[error] invalid_jump_paragraph={value}")
+            return False
+        try:
+            sentence = session.jump_to_paragraph(int(value))
+        except ValueError as exc:
+            print(f"[error] {exc}")
+            return False
+        if sentence is None:
+            print("[error] jump_target_has_no_sentence")
+            return False
+        _emit_sentence(session, sentence, tts)
+        return False
+    if command == "jump match":
+        value = (argument or "").strip()
+        if not value:
+            print("[error] empty_jump_match")
+            return False
+        try:
+            sentence = session.jump_to_match(value)
+        except ValueError as exc:
+            print(f"[error] {exc}")
+            return False
+        if sentence is None:
+            print("[error] jump_target_has_no_sentence")
+            return False
+        _emit_sentence(session, sentence, tts)
+        return False
+    if command == "pause":
+        session.pause()
+        print(f"[status] state={session.state.value}")
+        return False
+    if command == "resume":
+        sentence = session.resume()
+        print(f"[status] state={session.state.value}")
+        if sentence is not None:
+            _emit_sentence(session, sentence, tts)
+        return False
+    if command == "previous":
+        sentence = session.repeat_previous()
+        if sentence is not None:
+            print(f"[status] state={session.state.value}")
+            _emit_sentence(session, sentence, tts)
+        return False
+    if command == "again":
+        sentence = session.replay_current()
+        if sentence is not None:
+            print(f"[status] state={session.state.value}")
+            _emit_sentence(session, sentence, tts)
+        return False
+    if command == "paragraph":
+        sentences = session.replay_paragraph()
+        print(f"[status] state={session.state.value}")
+        if not sentences:
+            print("[error] current_paragraph_has_no_sentences")
+            return False
+        for sentence in sentences:
+            _emit_paragraph_replay_sentence(session, sentence, tts)
+        return False
+    if command == "next paragraph":
+        sentence = session.next_paragraph()
+        if sentence is None:
+            print("[error] no_next_paragraph")
+            return False
+        _emit_sentence(session, sentence, tts)
+        return False
+    if command == "previous paragraph":
+        sentence = session.previous_paragraph()
+        if sentence is None:
+            print("[error] no_previous_paragraph")
+            return False
+        _emit_sentence(session, sentence, tts)
+        return False
+    if command == "next subsection":
+        sentence = session.next_subsection()
+        if sentence is None:
+            print("[error] no_next_subsection")
+            return False
+        _emit_sentence(session, sentence, tts)
+        return False
+    if command == "previous subsection":
+        sentence = session.previous_subsection()
+        if sentence is None:
+            print("[error] no_previous_subsection")
+            return False
+        _emit_sentence(session, sentence, tts)
+        return False
+    if command == "next section":
+        sentence = session.next_section()
+        if sentence is None:
+            print("[error] no_next_section")
+            return False
+        _emit_sentence(session, sentence, tts)
+        return False
+    if command == "previous section":
+        sentence = session.previous_section()
+        if sentence is None:
+            print("[error] no_previous_section")
+            return False
+        _emit_sentence(session, sentence, tts)
+        return False
+    if command == "next":
+        if session.state is SessionState.PAUSED:
+            print("[status] state=paused command_ignored=next")
+            return False
+        sentence = session.advance()
+        if sentence is None:
+            print(f"[status] state={session.state.value}")
+            if session.state is SessionState.COMPLETED:
+                print(f"[{mode_label}] reached end of readable content")
+                return True
+            return False
+        _emit_sentence(session, sentence, tts)
+        return False
+    if command == "quit":
+        return True
+    print(f"[error] unhandled_command={command}")
+    return False
 
 
 def _emit_sentence(session, sentence, tts) -> None:
@@ -394,6 +533,18 @@ def _build_tts_backend(name: str):
     if name == "system":
         return SystemTextToSpeech()
     return ConsoleTextToSpeech()
+
+
+def _build_asr_backend(args):
+    if args.asr == "openai":
+        language = None if args.command_language == "auto" else args.command_language
+        return OpenAITurnAsr(
+            max_record_seconds=float(args.voice_listen_seconds),
+            silence_seconds_to_stop=float(args.voice_silence_seconds),
+            energy_threshold=float(args.voice_energy_threshold),
+            language=language,
+        )
+    return TypedTurnAsr()
 
 
 if __name__ == "__main__":

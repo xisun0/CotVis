@@ -53,11 +53,38 @@ def next_readable_paragraph_outside_marker(
     document: Document,
     current_index: int,
     marker_id: str | None,
+    *,
+    require_top_marker: bool = False,
 ) -> Paragraph | None:
     if marker_id is None:
         return next_readable_paragraph(document, current_index)
     for paragraph in document.paragraphs[current_index:]:
-        if paragraph.readable and marker_id not in paragraph.section_path_ids:
+        if not paragraph.readable:
+            continue
+        if require_top_marker and top_marker_id(paragraph) is None:
+            continue
+        if marker_id not in paragraph.section_path_ids:
+            return paragraph
+    return None
+
+
+def next_readable_paragraph_in_next_top_section(
+    document: Document,
+    current_index: int,
+    current_top_marker_id: str | None,
+) -> Paragraph | None:
+    target_top_marker_id: str | None = None
+    for paragraph in document.paragraphs[current_index:]:
+        if not paragraph.readable:
+            continue
+        paragraph_top_marker_id = top_marker_id(paragraph)
+        if paragraph_top_marker_id is None:
+            continue
+        if paragraph_top_marker_id == current_top_marker_id:
+            continue
+        if target_top_marker_id is None:
+            target_top_marker_id = paragraph_top_marker_id
+        if paragraph_top_marker_id == target_top_marker_id:
             return paragraph
     return None
 

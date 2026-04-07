@@ -231,23 +231,71 @@ Definition of done:
 ### Phase 3: Voice Command Loop
 
 Goal:
-- Replace keyboard controls with spoken commands
+- Replace keyboard controls with spoken control commands
+
+Decision:
+- implement Phase 3 in two steps
+- first ship Plan B: explicit-trigger listening so the ASR -> router -> runtime chain can be validated end to end
+- then iterate toward Plan A: automatic listening windows after each sentence or reading unit
+- keep Phase 3 narrowly scoped to reading-control intents
+- reject rewrite or review requests explicitly instead of trying to interpret them early
 
 Tasks:
 - Add ASR adapter for short command turns
-- Add turn controller
+- Add explicit-trigger turn controller
 - Add interrupt path from voice input into reading runtime
-- Map spoken commands to structured intents
+- Map spoken control commands to structured intents
+- Surface non-control utterances as deferred review requests
 
 Supported intents:
-- `stop`
-- `continue`
-- `repeat`
-- `this sentence has a problem`
-- `review this paragraph`
+- `pause`
+- `resume`
+- `next`
+- `previous`
+- `again`
+- `paragraph`
+- `jump`
 
 Definition of done:
-- User can interrupt reading and issue basic spoken control commands
+- User can explicitly trigger one spoken command turn and drive reading controls end to end
+
+Phase 3.1 scope:
+- build a bilingual command router first
+- support English and Chinese aliases for reading controls
+- keep the runtime semantics unchanged
+- let the router power terminal demos before real ASR is added
+
+Phase 3.2 scope:
+- add a `--voice-demo` CLI mode
+- use explicit trigger listening:
+  - press `Enter` to start one command turn
+  - capture one utterance
+  - transcribe it
+  - normalize it
+  - execute one control command
+- start with a typed ASR backend to validate the loop before real microphone capture
+- print:
+  - trigger state
+  - transcript
+  - normalized command
+  - action result
+
+Phase 3.3 scope:
+- keep explicit trigger start
+- replace fixed-length microphone recording with pause-based turn ending
+- detect:
+  - speech start
+  - trailing silence
+- stop recording automatically after a configurable silence duration
+- keep a maximum turn length as a fallback guardrail
+
+Deferred follow-up:
+- Bluetooth headset microphones are still less stable than the built-in MacBook microphone
+- keep Phase 3 moving with the built-in microphone as the current supported baseline
+- revisit headset-first tuning later:
+  - explicit input-device selection
+  - better diagnostics
+  - stronger VAD
 
 ### Phase 4: Review and Rewrite Loop
 

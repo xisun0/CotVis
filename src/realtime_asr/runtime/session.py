@@ -9,6 +9,7 @@ from realtime_asr.runtime.navigator import (
     first_readable_paragraph_of_marker_group,
     first_sentence,
     next_readable_paragraph,
+    next_readable_paragraph_in_next_top_section,
     next_readable_paragraph_outside_marker,
     next_sentence,
     previous_readable_paragraph,
@@ -204,7 +205,7 @@ class ReviewSession:
 
     def next_section(self) -> Sentence | None:
         marker_id = top_marker_id(self.current_paragraph)
-        paragraph = next_readable_paragraph_outside_marker(
+        paragraph = next_readable_paragraph_in_next_top_section(
             self.document,
             self.current_paragraph.index,
             marker_id,
