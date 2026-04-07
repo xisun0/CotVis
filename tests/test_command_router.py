@@ -1,4 +1,4 @@
-from realtime_asr.voice.commands import classify_utterance, normalize_command
+from realtime_asr.voice.commands import classify_utterance, normalize_command, normalize_review_decision
 
 
 def test_normalize_command_supports_english_aliases() -> None:
@@ -84,3 +84,10 @@ def test_classify_utterance_marks_unknown_when_no_rule_matches() -> None:
     classified = classify_utterance("   ")
 
     assert classified.kind == "unknown"
+
+
+def test_normalize_review_decision_supports_accept_and_discard_aliases() -> None:
+    assert normalize_review_decision("用这个").name == "accept"
+    assert normalize_review_decision("就这样").name == "accept"
+    assert normalize_review_decision("放弃").name == "discard"
+    assert normalize_review_decision("算了").name == "discard"

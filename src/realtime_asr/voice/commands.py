@@ -77,6 +77,26 @@ COMMAND_ALIASES: dict[str, str] = {
     "退出": "quit",
 }
 
+REVIEW_DECISION_ALIASES: dict[str, str] = {
+    "accept": "accept",
+    "use this": "accept",
+    "accept this": "accept",
+    "keep this": "accept",
+    "use it": "accept",
+    "用这个": "accept",
+    "接受这个": "accept",
+    "就这个": "accept",
+    "就这样": "accept",
+    "可以": "accept",
+    "discard": "discard",
+    "cancel": "discard",
+    "skip this": "discard",
+    "放弃": "discard",
+    "算了": "discard",
+    "先不改": "discard",
+    "不要改了": "discard",
+}
+
 
 def normalize_command(raw: str) -> NormalizedCommand | None:
     text = " ".join((raw or "").strip().split())
@@ -105,6 +125,21 @@ def normalize_command(raw: str) -> NormalizedCommand | None:
     if mapped is not None:
         return NormalizedCommand(name=mapped)
     mapped = COMMAND_ALIASES.get(text)
+    if mapped is not None:
+        return NormalizedCommand(name=mapped)
+    return None
+
+
+def normalize_review_decision(raw: str) -> NormalizedCommand | None:
+    text = " ".join((raw or "").strip().split())
+    text = text.strip(TRIM_PUNCTUATION)
+    if not text:
+        return None
+    lowered = text.lower()
+    mapped = REVIEW_DECISION_ALIASES.get(lowered)
+    if mapped is not None:
+        return NormalizedCommand(name=mapped)
+    mapped = REVIEW_DECISION_ALIASES.get(text)
     if mapped is not None:
         return NormalizedCommand(name=mapped)
     return None

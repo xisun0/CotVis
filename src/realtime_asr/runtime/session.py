@@ -4,6 +4,9 @@ from dataclasses import dataclass, field
 
 from realtime_asr.document.locator import locate_start_paragraph
 from realtime_asr.document.models import Document, Paragraph, Sentence
+from realtime_asr.events import ReviewCandidate, ReviewInstruction
+from realtime_asr.review.engine import ReviewEngine
+from realtime_asr.review.models import ReviewCycle, ReviewTarget
 from realtime_asr.runtime.navigator import (
     deepest_marker_id,
     first_readable_paragraph_of_marker_group,
@@ -33,8 +36,11 @@ class ReviewSession:
     document: Document
     state: SessionState
     anchor: ReadingAnchor
+    document_overview: str = ""
     sentence_history: list[str] = field(default_factory=list)
     last_announced_marker_id: str | None = None
+    active_review: ReviewCycle | None = None
+    pending_revision: ReviewCandidate | None = None
 
     @classmethod
     def start(
@@ -238,6 +244,112 @@ class ReviewSession:
         self.last_announced_marker_id = marker_id
         return [label]
 
+    def ensure_document_overview(self, engine: ReviewEngine) -> str:
+        if not self.document_overview:
+            self.document_overview = engine.summarize_document(self.document)
+        return self.document_overview
+
+    def start_review(self, request_text: str, engine: ReviewEngine) -> ReviewCycle:
+        current_sentence = self.current_sentence or self._resolve_current_sentence()
+        if current_sentence is None:
+            raise ValueError("No current sentence available for review")
+
+        existing_cycle = None
+        if self.active_review is not None and self.active_review.target.sentence_id == current_sentence.id:
+            existing_cycle = self.active_review
+
+        if existing_cycle is None:
+            target = ReviewTarget(
+                target_type="sentence",
+                paragraph_id=self.current_paragraph.id,
+                sentence_id=current_sentence.id,
+                source_text=current_sentence.text,
+                section_label=self.current_paragraph.section_marker_label or "",
+                document_overview=self.ensure_document_overview(engine),
+            )
+            cycle = ReviewCycle(
+                target=target,
+                request_text=request_text,
+                instruction=ReviewInstruction(raw_text=request_text, intent="", request_type="rewrite", rewrite_base="working", constraints=[]),
+                working_text=current_sentence.text,
+                proposed_text="",
+                return_state=self.state if self.state in {SessionState.READING, SessionState.PAUSED} else SessionState.READING,
+                conversation_history=[{"role": "user", "content": request_text}],
+            )
+        else:
+            cycle = existing_cycle
+            cycle.request_text = request_text
+            cycle.round_index += 1
+            cycle.conversation_history.append({"role": "user", "content": request_text})
+
+        self.state = SessionState.REVIEWING
+        instruction = engine.interpret_request(
+            target=cycle.target,
+            request_text=request_text,
+            working_text=cycle.working_text or cycle.target.source_text,
+            proposed_text=cycle.proposed_text,
+            conversation_history=cycle.conversation_history,
+        )
+        cycle.instruction = instruction
+        if instruction.rewrite_base == "original":
+            effective_base = cycle.target.source_text
+        elif instruction.rewrite_base == "proposed" and cycle.proposed_text:
+            effective_base = cycle.proposed_text
+        else:
+            effective_base = cycle.working_text or cycle.target.source_text
+        cycle.working_text = effective_base
+        if instruction.request_type == "answer":
+            cycle.candidates = []
+            cycle.conversation_history.append(
+                {
+                    "role": "assistant",
+                    "content": instruction.answer_text or "No grounded answer available.",
+                }
+            )
+            self.active_review = cycle
+            self.state = SessionState.PAUSED
+            return cycle
+        candidates = engine.generate_candidates(
+            target=cycle.target,
+            instruction=instruction,
+            working_text=effective_base,
+            conversation_history=cycle.conversation_history,
+        )
+        cycle.candidates = candidates
+        if candidates:
+            cycle.proposed_text = candidates[0].text
+        cycle.conversation_history.append(
+            {
+                "role": "assistant",
+                "content": _summarize_candidates_for_history(candidates),
+            }
+        )
+        self.active_review = cycle
+        self.state = SessionState.AWAITING_DECISION
+        return cycle
+
+    def clear_review(self) -> None:
+        self.active_review = None
+
+    def accept_review(self) -> ReviewCandidate | None:
+        if self.active_review is None or not self.active_review.candidates:
+            return None
+        accepted = self.active_review.candidates[0]
+        self.pending_revision = accepted
+        self.clear_review()
+        self.state = SessionState.PAUSED
+        return accepted
+
+    def discard_review(self) -> None:
+        return_state = self.active_review.return_state if self.active_review is not None else SessionState.READING
+        self.clear_review()
+        self.state = return_state
+
+    def exit_review(self) -> None:
+        return_state = self.active_review.return_state if self.active_review is not None else SessionState.READING
+        self.clear_review()
+        self.state = return_state
+
     def _resolve_current_sentence(self) -> Sentence | None:
         sentence = self.current_sentence
         if sentence is not None:
@@ -267,6 +379,12 @@ class ReviewSession:
         return sentence
 
     def _set_anchor(self, paragraph: Paragraph, sentence: Sentence | None) -> None:
+        if (
+            self.active_review is not None
+            and sentence is not None
+            and self.active_review.target.sentence_id != sentence.id
+        ):
+            self.clear_review()
         self.anchor.paragraph_id = paragraph.id
         self.anchor.last_known_paragraph_index = paragraph.index
         self.anchor.sentence_id = sentence.id if sentence is not None else None
@@ -275,3 +393,10 @@ class ReviewSession:
     def _remember_sentence(self, sentence: Sentence) -> None:
         if not self.sentence_history or self.sentence_history[-1] != sentence.id:
             self.sentence_history.append(sentence.id)
+
+
+def _summarize_candidates_for_history(candidates: list[ReviewCandidate]) -> str:
+    if not candidates:
+        return "No candidates generated."
+    parts = [f"v{candidate.version_id}: {candidate.text}" for candidate in candidates]
+    return " | ".join(parts)

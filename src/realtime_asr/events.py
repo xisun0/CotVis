@@ -7,6 +7,9 @@ from dataclasses import dataclass, field
 class ReviewInstruction:
     raw_text: str
     intent: str
+    request_type: str = "rewrite"
+    rewrite_base: str = "working"
+    answer_text: str = ""
     constraints: list[str] = field(default_factory=list)
 
 

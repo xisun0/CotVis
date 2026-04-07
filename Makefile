@@ -1,4 +1,4 @@
-PYTHON ?= python3
+PYTHON ?= python
 ARGS ?=
 
 .PHONY: setup run test setup-local commit-help

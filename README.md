@@ -17,8 +17,8 @@ The current codebase is in early rebuild status.
 - Phase 0 is complete: old ASR/visualization code has been removed and a new package skeleton is in place.
 - Phase 1 is complete: Markdown parsing, paragraph classification, stable IDs, reading anchors, and a structured dry-run preview are working.
 - Phase 2 is complete: sentence-level reading runtime, terminal interaction, section announcements, navigation commands, and TTS demo backends are working.
-- Phase 3.3 is underway: bilingual command normalization, explicit-trigger voice demo, and pause-based microphone turn ending are in place as a bridge to real spoken control.
-- ASR command capture and the live review loop are not implemented yet.
+- Phase 3 is complete enough for spoken reading control: bilingual command normalization, explicit-trigger voice demo, and pause-based microphone turn ending are in place.
+- Stage 4A is now working: spoken requests can enter a sentence-level review loop with answer/rewrite branching, shared review memory, and minimal accept/discard decisions.
 
 ## Current Scope
 
@@ -43,6 +43,7 @@ The current codebase is in early rebuild status.
 - Explicit-trigger voice demo with a typed ASR backend
 - Optional OpenAI microphone-backed ASR backend for `voice-demo`
 - Pause-based turn ending for microphone command capture
+- Stage 4A review loop for current-sentence requests
 - Section and abstract announcements before reading new parts
 - Paragraph / subsection / section navigation in the interactive demo
 - Demo TTS backends:
@@ -53,7 +54,7 @@ The current codebase is in early rebuild status.
 ### Not Yet Implemented
 
 - Voice interruption
-- Rewrite generation with real model calls
+- Broader document-context questions
 - Patch application to the document graph
 - Resume-after-edit behavior
 
@@ -201,17 +202,29 @@ Useful tuning flags for the microphone path:
 - `--voice-energy-threshold 0.005`
   - speech activity threshold for start/end detection
 
-## Voice Demo Notes
+## Stage 4A Review Loop
 
-Current Phase 3 voice behavior is intentionally narrow:
+Current request behavior is:
 
 - If an utterance matches a known control command, it is executed immediately.
-- Any other non-empty utterance is treated as a future review/rewrite request.
-- Review/rewrite handling is not implemented yet, so the system reports:
-  - `detected_request`
-  - `review_mode_not_implemented_yet`
+- Any other non-empty utterance is treated as a review request.
+- The system locks onto the current sentence and keeps a sentence-level review cycle with shared history.
+- The model first decides whether the request is an `answer` or a `rewrite`.
+- `answer` requests return a grounded short answer and pause reading without ending the current review cycle.
+- `rewrite` requests generate a single proposal with:
+  - `rationale`
+  - `revision`
+- The session then enters `awaiting_decision`.
 
-That means Phase 3 is for spoken reading control, not spoken rewriting.
+Current decision commands in `awaiting_decision`:
+
+- `用这个` / `可以` / `就这样` -> accept the current proposal
+- `放弃` / `算了` -> discard the current proposal
+
+Current limitation:
+
+- accepted proposals are stored for later apply, but are not yet written back to the document graph
+- paragraph-level review is not implemented yet
 
 ## Voice Demo Troubleshooting
 

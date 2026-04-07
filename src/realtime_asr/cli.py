@@ -4,10 +4,11 @@ import argparse
 from pathlib import Path
 
 from realtime_asr.document.loader import load_document
+from realtime_asr.review.engine import build_review_engine
 from realtime_asr.runtime.session import ReviewSession
 from realtime_asr.runtime.state_machine import SessionState
 from realtime_asr.voice.asr import OpenAITurnAsr, TypedTurnAsr
-from realtime_asr.voice.commands import classify_utterance
+from realtime_asr.voice.commands import ClassifiedUtterance, classify_utterance, normalize_review_decision
 from realtime_asr.voice.tts import ConsoleTextToSpeech, NullTextToSpeech, SystemTextToSpeech
 from realtime_asr.voice.turn_control import ExplicitTriggerTurnController
 
@@ -250,6 +251,8 @@ def _run_read_demo(session, args) -> None:
 
 def _run_interactive_demo(session, args) -> None:
     tts = _build_tts_backend(args.tts)
+    review_engine = build_review_engine()
+    session.ensure_document_overview(review_engine)
     sentence = session.begin_reading()
 
     print("[interactive-demo]")
@@ -270,10 +273,9 @@ def _run_interactive_demo(session, args) -> None:
             print("")
             break
 
-        classified = classify_utterance(raw)
+        classified = _classify_for_current_mode(session, raw)
         if classified.kind == "request":
-            print("[interactive-demo] detected_request")
-            print("[interactive-demo] review_mode_not_implemented_yet")
+            _handle_review_request(session, review_engine, classified.text or "")
             continue
         if classified.kind != "control" or classified.command is None:
             print(f"[error] unknown_command={raw}")
@@ -291,6 +293,8 @@ def _run_interactive_demo(session, args) -> None:
 
 def _run_voice_demo(session, args) -> None:
     tts = _build_tts_backend(args.tts)
+    review_engine = build_review_engine()
+    session.ensure_document_overview(review_engine)
     turn_controller = ExplicitTriggerTurnController()
     asr = _build_asr_backend(args)
     sentence = session.begin_reading()
@@ -344,10 +348,9 @@ def _run_voice_demo(session, args) -> None:
             continue
 
         print(f"[transcript] {turn.transcript}")
-        classified = classify_utterance(turn.transcript)
+        classified = _classify_for_current_mode(session, turn.transcript)
         if classified.kind == "request":
-            print("[voice-demo] detected_request")
-            print("[voice-demo] review_mode_not_implemented_yet")
+            _handle_review_request(session, review_engine, classified.text or "")
             continue
         if classified.kind != "control" or classified.command is None:
             print("[voice-demo] unsupported_spoken_command")
@@ -368,11 +371,29 @@ def _run_voice_demo(session, args) -> None:
 
 
 def _execute_control_command(session, tts, command: str, argument: str | None, mode_label: str) -> bool:
+    if session.state is SessionState.AWAITING_DECISION and command not in {"help", "status", "quit", "accept", "discard"}:
+        print(f"[{mode_label}] review_decision_required")
+        print(f"[{mode_label}] say 用这个 or 放弃, or continue refining with another request")
+        return False
     if command == "help":
         print("[help] pause resume next previous again paragraph next paragraph previous paragraph next subsection previous subsection next section previous section status jump paragraph N jump match TEXT quit")
         return False
     if command == "status":
         _print_status(session)
+        return False
+    if command == "accept":
+        accepted = session.accept_review()
+        if accepted is None:
+            print("[error] no_active_revision_to_accept")
+            return False
+        print("[review-decision] accepted")
+        print("[review-status] proposal stored for later apply")
+        print(f"[review-state] {session.state.value}")
+        return False
+    if command == "discard":
+        session.discard_review()
+        print("[review-decision] discarded")
+        print(f"[review-state] {session.state.value}")
         return False
     if command == "jump paragraph":
         value = (argument or "").strip()
@@ -508,6 +529,35 @@ def _emit_sentence(session, sentence, tts) -> None:
     tts.speak(sentence.text)
 
 
+def _handle_review_request(session, review_engine, request_text: str) -> None:
+    cycle = session.start_review(request_text, review_engine)
+    if cycle.instruction.request_type == "answer":
+        print(f"[review-request] {cycle.request_text}")
+        print(f"[review-intent] {cycle.instruction.intent}")
+        print("[answer]")
+        print(cycle.instruction.answer_text or "I do not have a grounded answer for that yet.")
+        print(f"[review-state] {session.state.value}")
+        return
+    print(f"[review-target] type={cycle.target.target_type} paragraph_id={cycle.target.paragraph_id} sentence_id={cycle.target.sentence_id}")
+    print(f"[review-request] {cycle.request_text}")
+    print(f"[review-intent] {cycle.instruction.intent}")
+    if cycle.instruction.constraints:
+        print(f"[review-constraints] {', '.join(cycle.instruction.constraints)}")
+    print("")
+    print("[original]")
+    print(cycle.target.source_text)
+    print("")
+    if cycle.candidates:
+        candidate = cycle.candidates[0]
+        print("[rationale]")
+        print(candidate.rationale)
+        print("")
+        print("[revision]")
+        print(candidate.text)
+        print("")
+    print("[review-state] awaiting_decision")
+
+
 def _emit_paragraph_replay_sentence(session, sentence, tts) -> None:
     print(
         f"[paragraph] paragraph={session.current_paragraph.id} "
@@ -525,6 +575,14 @@ def _print_status(session) -> None:
         f"paragraph_index={session.anchor.last_known_paragraph_index} "
         f"sentence_index={session.anchor.last_known_sentence_index}"
     )
+
+
+def _classify_for_current_mode(session, raw: str):
+    if session.state is SessionState.AWAITING_DECISION:
+        decision = normalize_review_decision(raw)
+        if decision is not None:
+            return ClassifiedUtterance(kind="control", command=decision, text=(raw or "").strip())
+    return classify_utterance(raw)
 
 
 def _build_tts_backend(name: str):
