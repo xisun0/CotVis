@@ -77,7 +77,7 @@ make setup-local
 
 ## Main Demo
 
-The current Phase 1 demo is the structured dry-run preview.
+The dry-run preview is still the fastest way to validate document parsing and anchor bootstrap.
 
 Run the real sample:
 
@@ -235,6 +235,9 @@ Current apply behavior:
 Current limitation:
 
 - paragraph-level review is not implemented yet
+- review targeting is still anchored to the current sentence
+- `again` and `paragraph` replay content for listening, but do not retarget follow-up review requests
+- after replaying a full paragraph or discussing a later sentence, cross-sentence follow-up rewrites are not guaranteed to bind to the sentence the user has in mind
 
 ## Voice Demo Troubleshooting
 
@@ -330,18 +333,16 @@ The important architecture rule is:
 - `src/realtime_asr/document/` — document loading, parsing, locating, models
 - `src/realtime_asr/runtime/` — session bootstrap, reading navigator, and state machine
 - `src/realtime_asr/review/` — placeholder review interfaces
-- `src/realtime_asr/patching/` — patch-target skeleton
+- `src/realtime_asr/patching/` — sentence-level apply and save planning
 - `src/realtime_asr/voice/` — demo TTS backends and future voice adapters
-- `tests/` — Phase 1 and Phase 2 tests
+- `tests/` — dry-run, reading, review loop, patching, and voice demo coverage
 
 ## Next Step
 
-The next implementation focus is the live review loop:
+The next implementation focus is completing the end-to-end voice review workflow around the current Stage 4B baseline:
 
-- explicit-trigger ASR command capture as the first Phase 3 voice demo
-- spoken pause/resume/repeat/jump commands
-- later iteration toward automatic listening windows after each reading unit
-- real microphone-backed ASR for command turns
-- review-mode transitions
-- rewrite candidate generation
-- local patch application and resume-after-edit
+- voice interruption during reading instead of explicit-trigger turns only
+- broader document-context questions beyond the current sentence-level review target
+- resume-after-edit behavior so reading can continue more naturally after an accepted rewrite
+- paragraph-level review instead of sentence-only review
+- file reload or rebase UX for external on-disk edits detected during a session

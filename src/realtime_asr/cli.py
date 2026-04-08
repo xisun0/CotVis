@@ -517,8 +517,7 @@ def _execute_control_command(session, tts, command: str, argument: str | None, m
         return False
     if command == "next":
         if session.state is SessionState.PAUSED:
-            print("[status] state=paused command_ignored=next")
-            return False
+            session.state = SessionState.READING
         sentence = session.advance()
         if sentence is None:
             print(f"[status] state={session.state.value}")

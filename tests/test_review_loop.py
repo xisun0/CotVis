@@ -1,11 +1,13 @@
 from pathlib import Path
 
+from realtime_asr.cli import _execute_control_command
 from realtime_asr.events import ReviewCandidate, ReviewInstruction
 from realtime_asr.review.engine import PlaceholderReviewEngine, ReviewEngine, _coerce_version_id
 from realtime_asr.review.models import ReviewTarget
 from realtime_asr.runtime.session import ReviewSession
 from realtime_asr.runtime.state_machine import SessionState
 from realtime_asr.document.loader import load_document
+from realtime_asr.voice.tts import NullTextToSpeech
 
 
 class TrackingReviewEngine(ReviewEngine):
@@ -202,6 +204,31 @@ def test_accept_review_stores_pending_revision_and_pauses(tmp_path: Path) -> Non
     assert session.state is SessionState.PAUSED
     assert session.current_sentence is not None
     assert session.current_sentence.text == cycle.candidates[0].text
+
+
+def test_next_command_advances_from_paused_after_accept(tmp_path: Path) -> None:
+    path = tmp_path / "draft.md"
+    path.write_text("Alpha sentence. Beta sentence.", encoding="utf-8")
+    document = load_document(path)
+    session = ReviewSession.start(document=document)
+    session.begin_reading()
+
+    session.start_review("Make it shorter.", PlaceholderReviewEngine())
+    session.accept_review()
+
+    should_quit = _execute_control_command(
+        session=session,
+        tts=NullTextToSpeech(),
+        command="next",
+        argument=None,
+        mode_label="test",
+    )
+
+    assert should_quit is False
+    assert session.state is SessionState.READING
+    assert session.current_sentence is not None
+    assert session.current_sentence.id == "p1s2"
+    assert session.current_sentence.text == "Beta sentence."
 
 
 def test_discard_review_returns_to_previous_state(tmp_path: Path) -> None:
