@@ -4,6 +4,7 @@ import argparse
 from pathlib import Path
 
 from realtime_asr.document.loader import load_document
+from realtime_asr.patching.save import SaveConflictError, plan_save, save_document
 from realtime_asr.review.engine import build_review_engine
 from realtime_asr.runtime.session import ReviewSession
 from realtime_asr.runtime.state_machine import SessionState
@@ -382,12 +383,28 @@ def _execute_control_command(session, tts, command: str, argument: str | None, m
         _print_status(session)
         return False
     if command == "accept":
-        accepted = session.accept_review()
-        if accepted is None:
+        try:
+            save_plan = plan_save(session.document)
+        except SaveConflictError as exc:
+            print(f"[save-error] {exc}")
+            print(f"[review-state] {session.state.value}")
+            return False
+        applied = session.accept_review()
+        if applied is None:
             print("[error] no_active_revision_to_accept")
             return False
+        save_result = save_document(session.document, apply_result=applied, plan=save_plan)
         print("[review-decision] accepted")
-        print("[review-status] proposal stored for later apply")
+        print(f"[apply] paragraph={applied.paragraph_id} sentence={applied.sentence_id}")
+        print("[original]")
+        print(applied.original_text)
+        print("[updated]")
+        current_sentence = session.current_sentence
+        if current_sentence is not None:
+            print(current_sentence.text)
+        else:
+            print(applied.updated_text)
+        print(f"[save] mode={save_result.mode} path={save_result.path}")
         print(f"[review-state] {session.state.value}")
         return False
     if command == "discard":

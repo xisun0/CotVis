@@ -18,7 +18,7 @@ The current codebase is in early rebuild status.
 - Phase 1 is complete: Markdown parsing, paragraph classification, stable IDs, reading anchors, and a structured dry-run preview are working.
 - Phase 2 is complete: sentence-level reading runtime, terminal interaction, section announcements, navigation commands, and TTS demo backends are working.
 - Phase 3 is complete enough for spoken reading control: bilingual command normalization, explicit-trigger voice demo, and pause-based microphone turn ending are in place.
-- Stage 4A is now working: spoken requests can enter a sentence-level review loop with answer/rewrite branching, shared review memory, and minimal accept/discard decisions.
+- Stage 4B is now working: spoken requests can enter a sentence-level review loop with answer/rewrite branching, shared review memory, accept/discard decisions, and immediate sentence-level apply on accept.
 
 ## Current Scope
 
@@ -43,7 +43,7 @@ The current codebase is in early rebuild status.
 - Explicit-trigger voice demo with a typed ASR backend
 - Optional OpenAI microphone-backed ASR backend for `voice-demo`
 - Pause-based turn ending for microphone command capture
-- Stage 4A review loop for current-sentence requests
+- Stage 4B review loop for current-sentence requests with sentence-level apply
 - Section and abstract announcements before reading new parts
 - Paragraph / subsection / section navigation in the interactive demo
 - Demo TTS backends:
@@ -55,7 +55,6 @@ The current codebase is in early rebuild status.
 
 - Voice interruption
 - Broader document-context questions
-- Patch application to the document graph
 - Resume-after-edit behavior
 
 ## Requirements
@@ -202,7 +201,7 @@ Useful tuning flags for the microphone path:
 - `--voice-energy-threshold 0.005`
   - speech activity threshold for start/end detection
 
-## Stage 4A Review Loop
+## Stage 4B Review Loop
 
 Current request behavior is:
 
@@ -221,9 +220,20 @@ Current decision commands in `awaiting_decision`:
 - `用这个` / `可以` / `就这样` -> accept the current proposal
 - `放弃` / `算了` -> discard the current proposal
 
+Current apply behavior:
+
+- `用这个` / `可以` / `就这样` immediately applies the accepted proposal to the current sentence in the in-memory document graph
+- the current paragraph is rebuilt locally after the sentence replacement
+- the reading anchor is relocated to the updated sentence
+- the review cycle is cleared and the session moves to `paused`
+- after apply, you can use `again`, `paragraph`, or `next` to verify the updated text
+- the updated document is saved to disk immediately:
+  - if the source file is tracked by git, the original file is overwritten
+  - otherwise, a sibling `*.reviewed.md` copy is written and future saves continue to update that copy
+- if the target file changed on disk during the session, saving is blocked with a conflict error instead of overwriting external changes
+
 Current limitation:
 
-- accepted proposals are stored for later apply, but are not yet written back to the document graph
 - paragraph-level review is not implemented yet
 
 ## Voice Demo Troubleshooting

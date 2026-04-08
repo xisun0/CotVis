@@ -193,13 +193,15 @@ def test_accept_review_stores_pending_revision_and_pauses(tmp_path: Path) -> Non
     session.begin_reading()
 
     cycle = session.start_review("Make it shorter.", PlaceholderReviewEngine())
-    accepted = session.accept_review()
+    applied = session.accept_review()
 
-    assert accepted is not None
-    assert accepted == cycle.candidates[0]
-    assert session.pending_revision == accepted
+    assert applied is not None
+    assert applied.original_text == cycle.target.source_text
+    assert session.pending_revision is None
     assert session.active_review is None
     assert session.state is SessionState.PAUSED
+    assert session.current_sentence is not None
+    assert session.current_sentence.text == cycle.candidates[0].text
 
 
 def test_discard_review_returns_to_previous_state(tmp_path: Path) -> None:

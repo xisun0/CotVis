@@ -34,6 +34,7 @@ class Paragraph:
 class Document:
     path: Path
     paragraphs: list[Paragraph]
+    raw_text: str = ""
 
     @property
     def readable_paragraphs(self) -> list[Paragraph]:

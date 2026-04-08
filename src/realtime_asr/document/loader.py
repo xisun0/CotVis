@@ -14,4 +14,4 @@ def load_document(path: Path) -> Document:
 
     text = path.read_text(encoding="utf-8")
     paragraphs = parse_markdown_text(text)
-    return Document(path=path, paragraphs=paragraphs)
+    return Document(path=path, paragraphs=paragraphs, raw_text=text)

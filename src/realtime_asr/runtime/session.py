@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from realtime_asr.document.locator import locate_start_paragraph
 from realtime_asr.document.models import Document, Paragraph, Sentence
 from realtime_asr.events import ReviewCandidate, ReviewInstruction
+from realtime_asr.patching.applier import ParagraphApplyResult, apply_sentence_replacement
 from realtime_asr.review.engine import ReviewEngine
 from realtime_asr.review.models import ReviewCycle, ReviewTarget
 from realtime_asr.runtime.navigator import (
@@ -331,14 +332,30 @@ class ReviewSession:
     def clear_review(self) -> None:
         self.active_review = None
 
-    def accept_review(self) -> ReviewCandidate | None:
+    def accept_review(self) -> ParagraphApplyResult | None:
         if self.active_review is None or not self.active_review.candidates:
             return None
-        accepted = self.active_review.candidates[0]
+        cycle = self.active_review
+        accepted = cycle.candidates[0]
+        paragraph = self.document.get_paragraph_by_id(cycle.target.paragraph_id)
+        if cycle.target.sentence_id is None:
+            return None
+
+        self.state = SessionState.APPLYING_PATCH
         self.pending_revision = accepted
+        result = apply_sentence_replacement(
+            paragraph,
+            sentence_id=cycle.target.sentence_id,
+            replacement=accepted.text,
+        )
+        relocated_sentence = paragraph.sentences[0] if paragraph.sentences else None
+        if result.sentence_id is not None:
+            relocated_sentence = next((sentence for sentence in paragraph.sentences if sentence.id == result.sentence_id), relocated_sentence)
+        self._set_anchor(paragraph, relocated_sentence)
+        self.pending_revision = None
         self.clear_review()
         self.state = SessionState.PAUSED
-        return accepted
+        return result
 
     def discard_review(self) -> None:
         return_state = self.active_review.return_state if self.active_review is not None else SessionState.READING
