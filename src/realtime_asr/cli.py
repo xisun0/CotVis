@@ -276,7 +276,7 @@ def _run_interactive_demo(session, args) -> None:
 
         classified = _classify_for_current_mode(session, raw)
         if classified.kind == "request":
-            _handle_review_request(session, review_engine, classified.text or "")
+            _handle_review_request(session, review_engine, tts, classified.text or "")
             continue
         if classified.kind != "control" or classified.command is None:
             print(f"[error] unknown_command={raw}")
@@ -351,7 +351,7 @@ def _run_voice_demo(session, args) -> None:
         print(f"[transcript] {turn.transcript}")
         classified = _classify_for_current_mode(session, turn.transcript)
         if classified.kind == "request":
-            _handle_review_request(session, review_engine, classified.text or "")
+            _handle_review_request(session, review_engine, tts, classified.text or "")
             continue
         if classified.kind != "control" or classified.command is None:
             print("[voice-demo] unsupported_spoken_command")
@@ -395,6 +395,7 @@ def _execute_control_command(session, tts, command: str, argument: str | None, m
             return False
         save_result = save_document(session.document, apply_result=applied, plan=save_plan)
         print("[review-decision] accepted")
+        tts.speak("Accepted.")
         print(f"[apply] paragraph={applied.paragraph_id} sentence={applied.sentence_id}")
         print("[original]")
         print(applied.original_text)
@@ -410,6 +411,7 @@ def _execute_control_command(session, tts, command: str, argument: str | None, m
     if command == "discard":
         session.discard_review()
         print("[review-decision] discarded")
+        tts.speak("Discarded.")
         print(f"[review-state] {session.state.value}")
         return False
     if command == "jump paragraph":
@@ -545,13 +547,15 @@ def _emit_sentence(session, sentence, tts) -> None:
     tts.speak(sentence.text)
 
 
-def _handle_review_request(session, review_engine, request_text: str) -> None:
+def _handle_review_request(session, review_engine, tts, request_text: str) -> None:
     cycle = session.start_review(request_text, review_engine)
     if cycle.instruction.request_type == "answer":
+        answer_text = cycle.instruction.answer_text or "I do not have a grounded answer for that yet."
         print(f"[review-request] {cycle.request_text}")
         print(f"[review-intent] {cycle.instruction.intent}")
         print("[answer]")
-        print(cycle.instruction.answer_text or "I do not have a grounded answer for that yet.")
+        print(answer_text)
+        tts.speak(answer_text)
         print(f"[review-state] {session.state.value}")
         return
     print(f"[review-target] type={cycle.target.target_type} paragraph_id={cycle.target.paragraph_id} sentence_id={cycle.target.sentence_id}")
@@ -567,9 +571,11 @@ def _handle_review_request(session, review_engine, request_text: str) -> None:
         candidate = cycle.candidates[0]
         print("[rationale]")
         print(candidate.rationale)
+        tts.speak(candidate.rationale)
         print("")
         print("[revision]")
         print(candidate.text)
+        tts.speak(candidate.text)
         print("")
     print("[review-state] awaiting_decision")
 

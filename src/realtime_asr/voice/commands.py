@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from opencc import OpenCC
 
 
 TRIM_PUNCTUATION = " \t\r\n.,!?;:()[]{}\"'`。，！？；：（）【】《》“”‘’"
+OPENCC_T2S = OpenCC("t2s")
 
 
 @dataclass(slots=True)
@@ -66,9 +68,11 @@ COMMAND_ALIASES: dict[str, str] = {
     "next section": "next section",
     "下一节": "next section",
     "下一章节": "next section",
+    "下一部分": "next section",
     "previous section": "previous section",
     "上一节": "previous section",
     "上一章节": "previous section",
+    "上一部分": "previous section",
     "status": "status",
     "状态": "status",
     "help": "help",
@@ -98,9 +102,14 @@ REVIEW_DECISION_ALIASES: dict[str, str] = {
 }
 
 
-def normalize_command(raw: str) -> NormalizedCommand | None:
+def _normalize_spoken_text(raw: str) -> str:
     text = " ".join((raw or "").strip().split())
     text = text.strip(TRIM_PUNCTUATION)
+    return OPENCC_T2S.convert(text)
+
+
+def normalize_command(raw: str) -> NormalizedCommand | None:
+    text = _normalize_spoken_text(raw)
     if not text:
         return NormalizedCommand(name="next")
 
@@ -131,8 +140,7 @@ def normalize_command(raw: str) -> NormalizedCommand | None:
 
 
 def normalize_review_decision(raw: str) -> NormalizedCommand | None:
-    text = " ".join((raw or "").strip().split())
-    text = text.strip(TRIM_PUNCTUATION)
+    text = _normalize_spoken_text(raw)
     if not text:
         return None
     lowered = text.lower()
@@ -146,13 +154,13 @@ def normalize_review_decision(raw: str) -> NormalizedCommand | None:
 
 
 def classify_utterance(raw: str) -> ClassifiedUtterance:
-    text = " ".join((raw or "").strip().split())
-    text = text.strip(TRIM_PUNCTUATION)
-    if not text:
-        return ClassifiedUtterance(kind="unknown", text=text)
+    original_text = " ".join((raw or "").strip().split())
+    original_text = original_text.strip(TRIM_PUNCTUATION)
+    if not original_text:
+        return ClassifiedUtterance(kind="unknown", text=original_text)
 
-    command = normalize_command(text)
+    command = normalize_command(original_text)
     if command is not None:
-        return ClassifiedUtterance(kind="control", command=command, text=text)
+        return ClassifiedUtterance(kind="control", command=command, text=original_text)
 
-    return ClassifiedUtterance(kind="request", text=text)
+    return ClassifiedUtterance(kind="request", text=original_text)

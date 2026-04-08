@@ -10,16 +10,21 @@ def test_normalize_command_supports_english_aliases() -> None:
 
 def test_normalize_command_supports_chinese_aliases() -> None:
     assert normalize_command("暂停").name == "pause"
+    assert normalize_command("暫停").name == "pause"
     assert normalize_command("暂停一下").name == "pause"
     assert normalize_command("继续").name == "resume"
+    assert normalize_command("繼續讀").name == "resume"
     assert normalize_command("继续读").name == "resume"
     assert normalize_command("下一句").name == "next"
     assert normalize_command("下一句。").name == "next"
     assert normalize_command("读下一句").name == "next"
     assert normalize_command("上一节").name == "previous section"
+    assert normalize_command("下一節").name == "next section"
+    assert normalize_command("下一部分").name == "next section"
     assert normalize_command("重复").name == "again"
     assert normalize_command("重复上一句").name == "previous"
     assert normalize_command("读这段").name == "paragraph"
+    assert normalize_command("讀這段").name == "paragraph"
     assert normalize_command("读下这段").name == "paragraph"
     assert normalize_command("读一下这段").name == "paragraph"
     assert normalize_command("读下这个段落").name == "paragraph"
@@ -72,6 +77,13 @@ def test_classify_utterance_treats_non_command_text_as_request() -> None:
     assert classified_neutral.kind == "request"
 
 
+def test_classify_utterance_preserves_request_text_without_script_conversion() -> None:
+    classified = classify_utterance("我想把這句改短一點")
+
+    assert classified.kind == "request"
+    assert classified.text == "我想把這句改短一點"
+
+
 def test_classify_utterance_marks_controls_separately() -> None:
     classified = classify_utterance("下一句")
 
@@ -88,6 +100,7 @@ def test_classify_utterance_marks_unknown_when_no_rule_matches() -> None:
 
 def test_normalize_review_decision_supports_accept_and_discard_aliases() -> None:
     assert normalize_review_decision("用这个").name == "accept"
+    assert normalize_review_decision("用這個").name == "accept"
     assert normalize_review_decision("就这样").name == "accept"
     assert normalize_review_decision("放弃").name == "discard"
     assert normalize_review_decision("算了").name == "discard"

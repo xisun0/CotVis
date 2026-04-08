@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from realtime_asr.cli import _execute_control_command
+from realtime_asr.cli import _handle_review_request
 from realtime_asr.events import ReviewCandidate, ReviewInstruction
 from realtime_asr.review.engine import PlaceholderReviewEngine, ReviewEngine, _coerce_version_id
 from realtime_asr.review.models import ReviewTarget
@@ -56,6 +57,15 @@ class TrackingReviewEngine(ReviewEngine):
         self.working_text_inputs.append(working_text)
         version = f"{working_text} -> {instruction.raw_text}"
         return [ReviewCandidate(version_id=1, text=version, rationale="tracked")]
+
+
+class RecordingTextToSpeech:
+    def __init__(self) -> None:
+        self.spoken: list[str] = []
+
+    def speak(self, text: str, interruptible: bool = True) -> None:
+        del interruptible
+        self.spoken.append(text)
 
 
 def test_request_enters_reviewing_and_awaiting_decision(tmp_path: Path) -> None:
@@ -153,6 +163,36 @@ def test_question_request_returns_answer_and_does_not_enter_decision_state(tmp_p
     assert any(item["role"] == "assistant" and item["content"] == "1 Intro" for item in session.active_review.conversation_history)
 
 
+def test_answer_request_is_spoken_via_tts(tmp_path: Path) -> None:
+    path = tmp_path / "draft.md"
+    path.write_text("# Intro\n\nAlpha sentence.", encoding="utf-8")
+    document = load_document(path)
+    session = ReviewSession.start(document=document)
+    session.begin_reading()
+    tts = RecordingTextToSpeech()
+
+    _handle_review_request(session, PlaceholderReviewEngine(), tts, "我们现在在哪个section")
+
+    assert tts.spoken == ["1 Intro"]
+
+
+def test_rewrite_request_speaks_rationale_then_revision(tmp_path: Path) -> None:
+    path = tmp_path / "draft.md"
+    path.write_text("Alpha sentence.", encoding="utf-8")
+    document = load_document(path)
+    session = ReviewSession.start(document=document)
+    session.begin_reading()
+    tts = RecordingTextToSpeech()
+
+    _handle_review_request(session, PlaceholderReviewEngine(), tts, "Make it shorter.")
+
+    assert len(tts.spoken) == 2
+    assert tts.spoken[0]
+    assert tts.spoken[1]
+    assert tts.spoken[0] == session.active_review.candidates[0].rationale
+    assert tts.spoken[1] == session.active_review.candidates[0].text
+
+
 def test_answer_and_rewrite_share_sentence_level_history(tmp_path: Path) -> None:
     path = tmp_path / "draft.md"
     path.write_text("# Intro\n\nAlpha sentence.", encoding="utf-8")
@@ -229,6 +269,36 @@ def test_next_command_advances_from_paused_after_accept(tmp_path: Path) -> None:
     assert session.current_sentence is not None
     assert session.current_sentence.id == "p1s2"
     assert session.current_sentence.text == "Beta sentence."
+
+
+def test_review_decision_is_spoken_for_accept_and_discard(tmp_path: Path) -> None:
+    path = tmp_path / "draft.md"
+    path.write_text("Alpha sentence. Beta sentence.", encoding="utf-8")
+    document = load_document(path)
+    session = ReviewSession.start(document=document)
+    session.begin_reading()
+    tts = RecordingTextToSpeech()
+
+    session.start_review("Make it shorter.", PlaceholderReviewEngine())
+    _execute_control_command(
+        session=session,
+        tts=tts,
+        command="discard",
+        argument=None,
+        mode_label="test",
+    )
+
+    session.start_review("Make it shorter.", PlaceholderReviewEngine())
+    _execute_control_command(
+        session=session,
+        tts=tts,
+        command="accept",
+        argument=None,
+        mode_label="test",
+    )
+
+    assert "Discarded." in tts.spoken
+    assert "Accepted." in tts.spoken
 
 
 def test_discard_review_returns_to_previous_state(tmp_path: Path) -> None:
