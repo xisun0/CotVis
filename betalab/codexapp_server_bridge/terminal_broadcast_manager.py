@@ -3,10 +3,10 @@ from __future__ import annotations
 import argparse
 import difflib
 import os
-import re
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -35,18 +35,17 @@ EN_VOICE = "Eddy (English (US))"
 OPENAI_TTS_MODEL = "gpt-4o-mini-tts"
 OPENAI_TTS_VOICE = "alloy"
 OPENAI_TTS_SPEED = 1.2
-SPEECH_SENTENCE_BOUNDARY_RE = re.compile(r"[。！？!?：:]\s*|\n+")
-SPEECH_REWRITE_SYSTEM_PROMPT = """你正在把终端里的 assistant 输出改写成适合 TTS 朗读的中文短播报。
+SPEECH_REWRITE_SYSTEM_PROMPT = """你正在把终端里的 assistant 输出改写成适合 TTS 朗读的中文播报。
 
 要求：
-- 输出 1 到 3 句自然口语
-- 优先保留对用户有价值的结果，其次才是简短进度
-- 不要逐字复述路径、命令、文件树、工具动作
-- 遇到文件清单、步骤清单、技术过程时，压缩成概括
-- 如果输入包含 patch、diff、命令、路径或工具日志，不要复述这些细节，只提炼当前动作和对用户有价值的结果
+- 句数与输入体量成比例：简短进度或单句结论输出 1 到 2 句，中等回复输出 3 到 5 句，详细分析或多步说明输出 6 到 10 句
+- 优先保留对用户有价值的结论和分析，其次才是进度或动作
+- 不要逐字复述路径、命令、函数签名、文件树或工具日志
+- 遇到文件清单、步骤清单、技术过程时，保留要点但压缩细节
+- 如果输入包含 patch、diff 或代码块，只提炼动作意图和结果，不复述代码
 - 不要添加原文没有的新事实
 - 不要输出项目符号、编号、Markdown、代码块
-- 不要输出“如果你愿意我可以继续”这类尾句
+- 不要输出"如果你愿意我可以继续"这类尾句
 - 输出必须能直接拿去做 TTS"""
 
 
@@ -206,6 +205,20 @@ def remove_completion_markers(text: str) -> str:
     return "\n".join(kept)
 
 
+def extract_latest_reply_segment(text: str) -> str:
+    segments: list[list[str]] = [[]]
+    for raw_line in text.splitlines():
+        if raw_line.strip() == OUTPUT_COMPLETE_MARKER:
+            segments.append([])
+            continue
+        segments[-1].append(raw_line)
+    for segment in reversed(segments):
+        cleaned = "\n".join(line for line in segment if line.strip()).strip()
+        if cleaned:
+            return cleaned
+    return ""
+
+
 def count_completion_marker_lines(text: str) -> int:
     count = 0
     for raw_line in text.splitlines():
@@ -214,49 +227,65 @@ def count_completion_marker_lines(text: str) -> int:
     return count
 
 
+def has_trailing_completion_marker(text: str) -> bool:
+    for raw_line in reversed(text.splitlines()):
+        line = raw_line.strip()
+        if not line:
+            continue
+        return line == OUTPUT_COMPLETE_MARKER
+    return False
+
+
 def strip_injected_prompt_text(text: str, target: TerminalTarget | None) -> str:
     if target is None:
         return text
 
     ignored_exact_lines = {"User request:"}
     initial_prompt_lines = set()
+    # Use short substrings that survive word-wrap inside Codex's box UI.
     ignored_fragments = [
-        "When responding in the terminal, follow this output protocol strictly",
-        "Write your normal user-facing response first",
-        "After the response is fully complete, output this exact marker",
-        "The marker must appear exactly once per completed assistant turn",
-        "The marker must be on a line by itself",
-        "Do not mention, explain, paraphrase, or discuss the marker",
-        "Do not output the marker until the response is fully finished",
-        "Do not place the marker inside code blocks, diffs, patches, quoted text, or examples",
-        "Do not emit any other completion markers",
-        "Never include the marker anywhere except as the final line of the turn",
-        OUTPUT_COMPLETE_MARKER,
+        "responding in the terminal",
+        "output protocol strictly",
+        "user-facing response first",
+        "fully complete, output this exact marker",
+        "output this exact marker on its own line",
+        "marker on its own line",
+        "marker must appear exactly once",
+        "marker must be on a line by itself",
+        "explain, paraphrase, or discuss the marker",
+        "output the marker until the response",
+        "place the marker inside code blocks",
+        "code blocks, diffs, patches",
+        "quoted text, or examples",
+        "examples.",
+        "emit any other completion markers",
+        "include the marker anywhere except",
     ]
     if target.initial_prompt:
         initial_prompt_lines = {
             line.strip() for line in target.initial_prompt.splitlines() if line.strip()
         }
-        ignored_fragments.extend(initial_prompt_lines)
 
     kept: list[str] = []
-    in_protocol_block = False
+    skip_next_marker_line = False
     for raw_line in text.splitlines():
         line = raw_line.strip()
         if not line:
             continue
-        if in_protocol_block and line in initial_prompt_lines:
-            in_protocol_block = False
+        if skip_next_marker_line and line == OUTPUT_COMPLETE_MARKER:
+            skip_next_marker_line = False
             continue
+        skip_next_marker_line = False
         if any(fragment in line for fragment in ignored_fragments):
-            in_protocol_block = True
+            if "output this exact marker on its own line" in line or line == "line:":
+                skip_next_marker_line = True
             continue
         if line in {"Rules:", "line:"}:
-            in_protocol_block = True
-            continue
-        if in_protocol_block:
+            skip_next_marker_line = True
             continue
         if line in ignored_exact_lines:
+            continue
+        if line in initial_prompt_lines:
             continue
         if "\\012" in line:
             continue
@@ -264,36 +293,20 @@ def strip_injected_prompt_text(text: str, target: TerminalTarget | None) -> str:
     return "\n".join(kept)
 
 
-def has_unclosed_pairs(text: str) -> bool:
-    candidate = text.strip()
-    if not candidate:
-        return False
-    if candidate.count("“") > candidate.count("”"):
-        return True
-    if candidate.count("(") > candidate.count(")"):
-        return True
-    if candidate.count("[") > candidate.count("]"):
-        return True
-    # Heuristic for straight quotes: odd count usually means a dangling quote.
-    if candidate.count('"') % 2 == 1:
-        return True
-    return False
-
-
 def compute_increment(previous: str, current: str) -> str:
     if not previous:
         return current
     if current.startswith(previous):
         return current[len(previous) :]
-    # Terminal output often gets reflowed or rewritten. Use a line diff so
-    # newly added assistant text is still detected when the snapshot no longer
-    # has the previous text as a strict prefix.
     previous_lines = previous.splitlines()
     current_lines = current.splitlines()
+    # Fewer lines than before → user scrolled up, visible content shrank. Not new output.
+    if len(current_lines) < len(previous_lines):
+        return ""
     matcher = difflib.SequenceMatcher(a=previous_lines, b=current_lines)
     added_lines: list[str] = []
     for tag, _i1, _i2, j1, j2 in matcher.get_opcodes():
-        if tag in {"insert", "replace"}:
+        if tag == "insert":
             added_lines.extend(current_lines[j1:j2])
     return "\n".join(added_lines)
 
@@ -322,13 +335,19 @@ def extract_codex_reply_text(text: str) -> str:
             continue
         if line.startswith("[listen]") or line.startswith("[update"):
             continue
-        if line.startswith("│") or line.startswith("╭") or line.startswith("╰"):
+        if line.startswith("╭") or line.startswith("╰"):
             continue
+        if line.startswith("│"):
+            line = line.removeprefix("│").rstrip("│").strip()
+            if not line:
+                continue
         if "esc to interrupt" in line:
             continue
         if "background terminal running" in line:
             continue
         if "gpt-" in line and "left" in line:
+            continue
+        if line.startswith("gpt-") and "·" in line:
             continue
         if line.startswith("Tip:"):
             continue
@@ -359,6 +378,10 @@ class BroadcastEvent:
     timestamp: float
 
 
+ACTIVITY_SOUND = "/System/Library/Sounds/Pop.aiff"
+ACTIVITY_INDICATOR_INTERVAL = 1.0  # seconds between activity chimes
+
+
 class TerminalBroadcastManager:
     def __init__(
         self,
@@ -366,145 +389,169 @@ class TerminalBroadcastManager:
         speak: bool = False,
         print_speak_text: bool = True,
         target: TerminalTarget | None = None,
-        speech_idle_seconds: float = 1.0,
         speech_rewrite_model: str = "gpt-4o-mini",
-        speech_max_chars: int = 140,
+        verbose: bool = False,
     ) -> None:
-        self._last_contents = ""
         self._last_reply_text = ""
-        self._pending_speech_buffer = ""
-        self._last_append_time = 0.0
-        self._last_flush_time = 0.0
-        self._completion_marker_count = 0
+        self._reply_buffer = ""
+        self._last_completed_reply_text = ""
         self._speak = speak
         self._print_speak_text = print_speak_text
         self._target = target
-        self._speech_idle_seconds = max(0.2, float(speech_idle_seconds))
         self._speech_rewrite_model = speech_rewrite_model
-        self._speech_max_chars = max(30, int(speech_max_chars))
         self._openai_client: OpenAI | None = None
+        self._openai_client_lock = threading.Lock()
+        self._last_activity_chime_time = 0.0
+        self._verbose = verbose
 
-    def append_reply_increment(self, text: str) -> None:
-        cleaned = text.strip()
-        if not cleaned:
-            return
-        if self._pending_speech_buffer:
-            self._pending_speech_buffer = f"{self._pending_speech_buffer}\n{cleaned}"
-        else:
-            self._pending_speech_buffer = cleaned
-        self._last_append_time = time.time()
-
-    def flush_ready_speech_chunks(self, *, force_flush: bool = False) -> list[str]:
-        if not self._pending_speech_buffer.strip():
-            return []
+    def _play_activity_chime(self) -> None:
         now = time.time()
-        if not force_flush:
-            force_flush = now - self._last_append_time >= self._speech_idle_seconds
-        chunks: list[str] = []
+        if now - self._last_activity_chime_time < ACTIVITY_INDICATOR_INTERVAL:
+            return
+        self._last_activity_chime_time = now
+        subprocess.Popen(
+            ["afplay", ACTIVITY_SOUND],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
 
-        while True:
-            next_chunk = self._pop_next_speech_chunk(force_flush=force_flush)
-            if not next_chunk:
-                break
-            chunks.append(next_chunk)
-
-        if chunks:
-            self._last_flush_time = now
-        return chunks
-
-    def _pop_next_speech_chunk(self, *, force_flush: bool) -> str | None:
-        buffer = self._pending_speech_buffer.strip()
-        if not buffer:
-            self._pending_speech_buffer = ""
-            return None
-
-        cutoff = self._find_speech_boundary(buffer)
-        if cutoff is not None:
-            chunk = buffer[:cutoff].strip()
-            remainder = buffer[cutoff:].lstrip()
-            if has_unclosed_pairs(chunk) and remainder:
-                return None
-            self._pending_speech_buffer = remainder
-            return chunk or None
-
-        if len(buffer) >= self._speech_max_chars:
-            chunk = buffer[: self._speech_max_chars].strip()
-            remainder = buffer[self._speech_max_chars :].lstrip()
-            if has_unclosed_pairs(chunk) and remainder and not force_flush:
-                return None
-            self._pending_speech_buffer = remainder
-            return chunk or None
-
-        if force_flush:
-            self._pending_speech_buffer = ""
-            return buffer
-
-        return None
-
-    def _find_speech_boundary(self, buffer: str) -> int | None:
-        boundaries: list[int] = []
-        for match in SPEECH_SENTENCE_BOUNDARY_RE.finditer(buffer):
-            boundaries.append(match.end())
-        if not boundaries:
-            return None
-
-        # Prefer the latest sentence boundary that keeps the chunk compact enough
-        # for continuous playback. If every boundary is already too long, fall back
-        # to the first complete sentence.
-        candidates = [pos for pos in boundaries if pos <= self._speech_max_chars]
-        if candidates:
-            return candidates[-1]
-        return boundaries[0]
+    def _chime_until_done(self, stop_event: threading.Event) -> None:
+        """Background thread: play a chime every second until stop_event is set."""
+        while not stop_event.wait(timeout=ACTIVITY_INDICATOR_INTERVAL):
+            subprocess.Popen(
+                ["afplay", ACTIVITY_SOUND],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        self._last_activity_chime_time = time.time()
 
     def poll(self) -> BroadcastEvent | None:
         window_name = get_terminal_name(self._target)
         current = get_terminal_contents(self._target)
-        _ = compute_increment(self._last_contents, current)
-        self._last_contents = current
-        current_reply_text = extract_codex_reply_text(current)
-        current_reply_text = strip_injected_prompt_text(current_reply_text, self._target)
-        current_marker_count = count_completion_marker_lines(current_reply_text)
-        marker_completed = current_marker_count > self._completion_marker_count
-        self._completion_marker_count = current_marker_count
-        current_reply_text = remove_completion_markers(current_reply_text)
+        extracted_reply_text = extract_codex_reply_text(current)
+        stripped_reply_text = strip_injected_prompt_text(extracted_reply_text, self._target)
+        current_marker_count = count_completion_marker_lines(stripped_reply_text)
+        current_reply_text = extract_latest_reply_segment(stripped_reply_text)
+        marker_completed = has_trailing_completion_marker(stripped_reply_text)
+        completed_reply_is_new = marker_completed and (
+            current_reply_text.strip() != self._last_completed_reply_text.strip()
+        )
         reply_increment = compute_increment(self._last_reply_text, current_reply_text)
-        self._last_reply_text = current_reply_text
-        if reply_increment.strip():
-            self.append_reply_increment(reply_increment)
+        if len(current_reply_text.splitlines()) >= len(self._last_reply_text.splitlines()):
+            self._last_reply_text = current_reply_text
 
-        ready_chunks = self.flush_ready_speech_chunks(force_flush=marker_completed)
-        if not ready_chunks:
+        if self._verbose:
+            raw_has_marker = OUTPUT_COMPLETE_MARKER in current
+            extracted_has_marker = OUTPUT_COMPLETE_MARKER in extracted_reply_text
+            stripped_has_marker = OUTPUT_COMPLETE_MARKER in stripped_reply_text
+            print(
+                f"[verbose] marker_now={current_marker_count} completed={marker_completed} completed_is_new={completed_reply_is_new} "
+                f"raw_has_marker={raw_has_marker} "
+                f"extracted_has_marker={extracted_has_marker} "
+                f"stripped_has_marker={stripped_has_marker} "
+                f"increment_len={len(reply_increment.strip())} "
+                f"buffer_len={len(self._reply_buffer)} "
+                f"reply_lines={len(current_reply_text.splitlines())} "
+                f"extracted_lines={len(extracted_reply_text.splitlines())} "
+                f"stripped_lines={len(stripped_reply_text.splitlines())}",
+                file=sys.stderr,
+            )
+            if extracted_reply_text != stripped_reply_text:
+                print(
+                    f"[verbose] strip_delta extracted_len={len(extracted_reply_text.strip())} "
+                    f"stripped_len={len(stripped_reply_text.strip())}",
+                    file=sys.stderr,
+                )
+            if reply_increment.strip():
+                preview = reply_increment.strip()[:80].replace("\n", "↵")
+                print(f"[verbose] increment preview: {preview!r}", file=sys.stderr)
+
+        if reply_increment.strip():
+            if self._reply_buffer:
+                self._reply_buffer = f"{self._reply_buffer}\n{reply_increment.strip()}"
+            else:
+                self._reply_buffer = reply_increment.strip()
+            if self._speak and not marker_completed:
+                self._play_activity_chime()
+
+        if not completed_reply_is_new:
             return None
 
-        emitted_text = "\n\n".join(ready_chunks)
-        event = BroadcastEvent(
-            window_name=window_name,
-            text=emitted_text,
-            timestamp=time.time(),
-        )
+        if not self._reply_buffer.strip():
+            # Completion can become visible in the same poll where no diff-style
+            # increment is detected; fall back to the full current reply if it
+            # differs from the last completed turn.
+            self._reply_buffer = current_reply_text.strip()
+
+        if not self._reply_buffer.strip():
+            return None
+
+        # Force-reset tracking to current terminal state so the next turn starts
+        # fresh, regardless of whether the terminal UI shrank after this turn.
+        self._last_reply_text = current_reply_text
+        self._last_completed_reply_text = current_reply_text.strip()
+
+        reply_text = self._reply_buffer
+        self._reply_buffer = ""
+
         if self._print_speak_text:
             print("")
-            print("[speak]")
-            print(emitted_text.rstrip())
-        for chunk in ready_chunks:
-            try:
-                if self._openai_client is None:
-                    self._openai_client = OpenAI()
-                spoken = rewrite_for_speech_with_model(
-                    chunk,
-                    client=self._openai_client,
-                    model=self._speech_rewrite_model,
-                )
-            except Exception as exc:
-                print(f"[spoken-error] {exc}", file=sys.stderr)
-                continue
-            if spoken:
-                print("")
-                print("[spoken]")
-                print(spoken.rstrip())
-                if self._speak:
-                    speak_text(spoken)
+            print("[reply]")
+            print(reply_text.rstrip())
+
+        event = BroadcastEvent(
+            window_name=window_name,
+            text=reply_text,
+            timestamp=time.time(),
+        )
+
+        if self._speak or self._print_speak_text:
+            threading.Thread(
+                target=self._rewrite_and_speak,
+                args=(reply_text,),
+                daemon=True,
+            ).start()
+
         return event
+
+    def _get_openai_client(self) -> OpenAI:
+        with self._openai_client_lock:
+            if self._openai_client is None:
+                self._openai_client = OpenAI()
+            return self._openai_client
+
+    def _rewrite_and_speak(self, reply_text: str) -> None:
+        stop_chime = threading.Event()
+        if self._speak:
+            threading.Thread(
+                target=self._chime_until_done, args=(stop_chime,), daemon=True
+            ).start()
+
+        try:
+            spoken = rewrite_for_speech_with_model(
+                reply_text,
+                client=self._get_openai_client(),
+                model=self._speech_rewrite_model,
+            )
+        except Exception as exc:
+            print(f"[spoken-error] rewrite failed: {exc}", file=sys.stderr)
+            return
+        finally:
+            stop_chime.set()
+
+        if not spoken:
+            return
+
+        if self._print_speak_text:
+            print("")
+            print("[spoken]")
+            print(spoken.rstrip())
+
+        if self._speak:
+            try:
+                speak_text(spoken)
+            except Exception as exc:
+                print(f"[spoken-error] tts failed: {exc}", file=sys.stderr)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -549,21 +596,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Ignore launch binding and always follow the current front Terminal window.",
     )
     parser.add_argument(
-        "--speech-idle-seconds",
-        type=float,
-        default=1.0,
-        help="Minimum idle time before buffered reply text is flushed as a speech chunk.",
-    )
-    parser.add_argument(
         "--speech-rewrite-model",
         default="gpt-4o-mini",
-        help="Model used to rewrite buffered terminal output into speech-ready Chinese.",
+        help="Model used to rewrite the completed reply into speech-ready Chinese.",
     )
     parser.add_argument(
-        "--speech-max-chars",
-        type=int,
-        default=140,
-        help="Preferred maximum character count for one buffered speech chunk before it is split.",
+        "--verbose",
+        action="store_true",
+        help="Print per-poll pipeline diagnostics to stderr.",
     )
     return parser
 
@@ -585,9 +625,8 @@ def main() -> int:
         speak=bool(args.speak) and not bool(args.silent_debug),
         print_speak_text=True,
         target=target,
-        speech_idle_seconds=float(args.speech_idle_seconds),
         speech_rewrite_model=args.speech_rewrite_model,
-        speech_max_chars=int(args.speech_max_chars),
+        verbose=bool(args.verbose),
     )
     started_at = time.time()
     if target is None:

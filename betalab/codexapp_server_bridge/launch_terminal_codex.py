@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import os
 import shlex
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -33,21 +35,14 @@ class TerminalTarget:
     initial_prompt: str | None = None
 
 
-def build_terminal_command(*, working_directory: str, initial_prompt: str | None = None) -> str:
-    parts = [
-        f"cd {shlex.quote(working_directory)}",
-        "codex --no-alt-screen",
-    ]
-    return " && ".join(parts)
-
-
 def build_protocol_prompt(user_prompt: str) -> str:
     return f"{TERMINAL_OUTPUT_PROTOCOL}\n\nUser request:\n{user_prompt}"
 
 
 def send_prompt_to_terminal(target: TerminalTarget, prompt: str) -> None:
+    """Send a single-line prompt to the terminal via tty write."""
     tty_path = Path(target.tty)
-    payload = prompt
+    payload = prompt.strip().replace("\n", " ")
     if not payload.endswith("\n"):
         payload += "\n"
     with tty_path.open("w", encoding="utf-8", errors="ignore") as handle:
@@ -55,14 +50,39 @@ def send_prompt_to_terminal(target: TerminalTarget, prompt: str) -> None:
         handle.flush()
 
 
+def _write_launch_script(*, working_directory: str, prompt: str) -> str:
+    """Write a temp shell script that launches codex with prompt as a single argument.
+
+    Using a script file sidesteps AppleScript string escaping — shlex.quote handles
+    all special characters in the prompt without needing to embed them in the
+    AppleScript do-script string.
+    """
+    script = "\n".join([
+        "#!/bin/zsh",
+        f"cd {shlex.quote(working_directory)}",
+        f"exec codex --no-alt-screen {shlex.quote(prompt)}",
+        "",
+    ])
+    fd, path = tempfile.mkstemp(suffix=".sh")
+    with os.fdopen(fd, "w") as f:
+        f.write(script)
+    os.chmod(path, 0o755)
+    return path
+
+
 def launch_terminal_codex(
     *, working_directory: str | None = None, initial_prompt: str | None = None
 ) -> TerminalTarget:
     target_dir = working_directory or str(REPO_ROOT)
-    shell_command = build_terminal_command(
-        working_directory=target_dir,
-        initial_prompt=initial_prompt,
-    )
+
+    script_path: str | None = None
+    if initial_prompt:
+        full_prompt = build_protocol_prompt(initial_prompt)
+        script_path = _write_launch_script(working_directory=target_dir, prompt=full_prompt)
+        shell_command = f"zsh {shlex.quote(script_path)}"
+    else:
+        shell_command = f"cd {shlex.quote(target_dir)} && codex --no-alt-screen"
+
     applescript = f'''
 tell application "Terminal"
     activate
@@ -86,9 +106,15 @@ end tell
         tty=tty,
         initial_prompt=initial_prompt,
     )
-    if initial_prompt:
-        time.sleep(1.2)
-        send_prompt_to_terminal(target, build_protocol_prompt(initial_prompt))
+
+    if script_path:
+        # Give zsh enough time to exec the script before we delete it
+        time.sleep(1.5)
+        try:
+            os.unlink(script_path)
+        except OSError:
+            pass
+
     return target
 
 
