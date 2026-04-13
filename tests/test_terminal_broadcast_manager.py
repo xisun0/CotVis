@@ -208,8 +208,60 @@ def test_rewrite_for_speech_with_model_includes_user_input_context(monkeypatch) 
     system_message = captured["messages"][0]["content"]
     user_message = captured["messages"][1]["content"]
     assert "不要自动翻译成中文" in system_message
+    assert "读正文第一段" in system_message
     assert "<user_input>\nuser asks for a concise summary\n</user_input>" in user_message
     assert "<chunk>\nassistant reply\n</chunk>" in user_message
+
+
+def test_rewrite_for_speech_with_model_returns_exact_quoted_text_for_read_aloud() -> None:
+    class FailingCompletions:
+        def create(self, **kwargs):
+            raise AssertionError("model should not be called for verbatim read-aloud")
+
+    class FailingChat:
+        completions = FailingCompletions()
+
+    class FailingClient:
+        chat = FailingChat()
+
+    spoken = tbm.rewrite_for_speech_with_model(
+        (
+            "我不能直接在终端里发语音，但可以把下一段原文贴出来，方便你自己朗读或让我帮你改成更适合朗读的口语版：\n\n"
+            "“近十年来，编程教育在全球范围内逐渐升温，中国少儿编程市场也进入快速发展阶段。学习编程被普遍认为有助于培养儿童的逻辑思维与问题解决能力，逐渐受到家长关注。与此同时，4G网络的普及推动了直播技术在教育场景中的广泛应用，在线教育模式由此也得以快速发展，进一步扩大了编程教育的地域覆盖范围。随着越来越多品牌涌入这一赛道，市场竞争迅速加剧。”\n\n"
+            "如果你要，我下一条可以直接把它改成“适合朗读的顺口版本”。"
+        ),
+        user_input="那你朗读一下下一段给我听",
+        client=FailingClient(),
+    )
+
+    assert spoken == (
+        "近十年来，编程教育在全球范围内逐渐升温，中国少儿编程市场也进入快速发展阶段。学习编程被普遍认为有助于培养儿童的逻辑思维与问题解决能力，逐渐受到家长关注。与此同时，4G网络的普及推动了直播技术在教育场景中的广泛应用，在线教育模式由此也得以快速发展，进一步扩大了编程教育的地域覆盖范围。随着越来越多品牌涌入这一赛道，市场竞争迅速加剧。"
+    )
+
+
+def test_rewrite_for_speech_with_model_returns_exact_first_paragraph_for_reading_request() -> None:
+    class FailingCompletions:
+        def create(self, **kwargs):
+            raise AssertionError("model should not be called for verbatim reading")
+
+    class FailingChat:
+        completions = FailingCompletions()
+
+    class FailingClient:
+        chat = FailingChat()
+
+    spoken = tbm.rewrite_for_speech_with_model(
+        (
+            "以 `tex` 为准，正文第一段是：\n\n"
+            "“2022年，在一次管理层会议上，核桃编程 COO 齐峰走进会议室，手中拿着一份刚出炉的定价实验报告。过去一个多月，公司围绕主打课程的定价进行了多轮实验，尝试评估将售价从2699元上调至2899元的可行性。实验结果显示，售价上调200元后，相关量化指标并未出现显著下滑：涨价似乎并未拖累销售转化率。若这一趋势能够持续，提价无疑将提升公司的收入水平。然而，这些结果是否足以支撑一次正式调价，仍需管理层讨论决定。”"
+        ),
+        user_input="那你现在读一下案例正文第一段",
+        client=FailingClient(),
+    )
+
+    assert spoken == (
+        "2022年，在一次管理层会议上，核桃编程 COO 齐峰走进会议室，手中拿着一份刚出炉的定价实验报告。过去一个多月，公司围绕主打课程的定价进行了多轮实验，尝试评估将售价从2699元上调至2899元的可行性。实验结果显示，售价上调200元后，相关量化指标并未出现显著下滑：涨价似乎并未拖累销售转化率。若这一趋势能够持续，提价无疑将提升公司的收入水平。然而，这些结果是否足以支撑一次正式调价，仍需管理层讨论决定。"
+    )
 
 
 # Date noted: 2026-04-12
