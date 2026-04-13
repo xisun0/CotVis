@@ -46,18 +46,72 @@ EN_VOICE = "Eddy (English (US))"
 OPENAI_TTS_MODEL = "gpt-4o-mini-tts"
 OPENAI_TTS_VOICE = "alloy"
 OPENAI_TTS_SPEED = 1.2
-SPEECH_REWRITE_SYSTEM_PROMPT = """你正在把终端里的 assistant 输出改写成适合 TTS 朗读的中文播报。
+SPEECH_REWRITE_SYSTEM_PROMPT = """你正在把终端里的 assistant 输出改写成适合 TTS 朗读的播报文本。
 
-要求：
-- 句数与输入体量成比例：简短进度或单句结论输出 1 到 2 句，中等回复输出 3 到 5 句，详细分析或多步说明输出 6 到 10 句
-- 优先保留对用户有价值的结论和分析，其次才是进度或动作
-- 不要逐字复述路径、命令、函数签名、文件树或工具日志
-- 遇到文件清单、步骤清单、技术过程时，保留要点但压缩细节
-- 如果输入包含 patch、diff 或代码块，只提炼动作意图和结果，不复述代码
+你会同时看到两段信息：
+1. 当前轮用户输入
+2. assistant 回复
+
+你的目标不是重新创作，也不是优先做摘要，而是生成一段最适合用户此刻直接听到的播报文本。
+
+核心原则：
+- 默认高保真保留 assistant 回复中的核心信息、结论和顺序
+- 优先做“可听化”处理，而不是“内容重写”
+- 只有当原回复明显不适合直接朗读时，才做压缩、概括或重组
+- 默认保持 assistant 回复的主要语言，不要自动翻译成中文
+- 如果 assistant 回复主要是英文，就输出英文；如果主要是中文，就输出中文；只有用户明确要求翻译时才改变语言
 - 不要添加原文没有的新事实
+- 输出必须能直接拿去做 TTS
 - 不要输出项目符号、编号、Markdown、代码块
-- 不要输出"如果你愿意我可以继续"这类尾句
-- 输出必须能直接拿去做 TTS"""
+- 不要输出“如果你愿意我可以继续”这类尾句
+- 不要补空话、套话或没有信息增量的总结句
+- 输出应像语音助手正在对用户说话，而不是像项目汇报、文档说明或书面总结
+
+先按下面顺序决策：
+
+第一步：判断用户这一轮更需要听到哪一种内容
+- 原文正文
+- 结果结论
+- 简短进度
+- 技术内容的压缩摘要
+
+第二步：默认采用“高保真口语化”
+也就是说：
+- 尽量保留 assistant 回复中的原有信息和顺序
+- 只做轻度处理，让它更适合耳朵去听
+- 例如：
+  - 去掉 Markdown 链接、反引号、代码格式
+  - 把视觉格式改成自然口语
+  - 把超长句拆短
+  - 删掉明显不适合播报的尾句
+  - 合并轻微重复
+
+第三步：只有在以下情况才明显压缩或摘要
+- 回复里混有路径、命令、文件树、工具日志、patch、diff、代码块
+- 回复主要是技术清单、枚举或过程痕迹，直接朗读会很难听
+- 用户更需要的是结果，而不是过程细节
+
+当用户意图是“朗读/背诵/直接复述原文”时：
+- 例如：背一下、念一下、朗读、读给我听、复述原文、直接说原话、quote、verbatim、read aloud
+- 优先保留 assistant 回复中真正面向用户的正文内容
+- 不要把说明性外壳、候选列表框架、工具痕迹、结尾补充一起原样念出来
+- 可以做轻微口语化整理，但不要改变原文含义和信息顺序
+
+当用户意图不是“原文朗读”时：
+- 如果 assistant 回复已经有明确结果，优先播结果，必要时补一句背景
+- 如果 assistant 回复主要是过程更新，只输出一句简短进度同步，不展开工具细节
+- 如果 assistant 回复主要是技术清单或结构说明，尽量保留原意，但压缩成更容易听懂的表达
+- 默认只保留一个最适合朗读的版本，不要输出多个候选表达，除非保留一个备选明显更有帮助
+
+长度原则：
+- 默认尽量短，但不能丢掉关键事实
+- 简短结果或进度：1 到 2 句
+- 中等说明：2 到 4 句
+- 只有当 assistant 回复本身就是完整分析，且这些信息对听者明显重要时，才到 5 句以上
+
+输出要求：
+- 只输出最终可播报文本本身
+- 不要解释你的判断过程"""
 
 
 def run_osascript(script: str) -> str:
@@ -148,12 +202,14 @@ def speak_text(text: str) -> None:
 def rewrite_for_speech_with_model(
     chunk: str,
     *,
+    user_input: str = "",
     client: OpenAI | None = None,
     model: str = "gpt-4o-mini",
 ) -> str:
     cleaned = remove_completion_markers(chunk).strip()
     if not cleaned:
         return ""
+    cleaned_user_input = user_input.strip()
 
     local_client = client or OpenAI()
     completion = local_client.chat.completions.create(
@@ -164,7 +220,14 @@ def rewrite_for_speech_with_model(
             {
                 "role": "user",
                 "content": (
-                    "请把下面这段终端输出改写成适合语音播报的中文短文本：\n\n"
+                    "下面有两段信息：当前轮用户输入，以及 assistant 的回复。\n"
+                    "请输出最适合直接语音播报的文本。\n\n"
+                    "要求：\n"
+                    "- 默认尽量高保真保留 assistant 回复中的核心信息和顺序\n"
+                    "- 只在确实不适合听的时候才压缩或摘要\n"
+                    "- 默认保持 assistant 回复的主要语言，不要自动翻译\n"
+                    "- 不要复述用户输入，除非这样做对说明结论是必要的\n\n"
+                    f"<user_input>\n{cleaned_user_input}\n</user_input>\n\n"
                     f"<chunk>\n{cleaned}\n</chunk>"
                 ),
             },
@@ -521,6 +584,7 @@ class TerminalBroadcastManager:
         window_name: str,
         reply_text: str,
         timestamp: float,
+        user_input: str,
     ) -> BroadcastEvent | None:
         if replies_are_effectively_same(reply_text, self._last_emitted_reply_text):
             if self._verbose:
@@ -542,13 +606,13 @@ class TerminalBroadcastManager:
         if self._speak or self._print_speak_text:
             threading.Thread(
                 target=self._rewrite_and_speak,
-                args=(reply_text,),
+                args=(reply_text, user_input),
                 daemon=True,
             ).start()
 
         return event
 
-    def _poll_session_event(self, window_name: str) -> BroadcastEvent | None:
+    def _poll_session_event(self, window_name: str, latest_user_input: str) -> BroadcastEvent | None:
         if self._target is None or not self._target.session_path:
             return None
         session_turn = read_latest_completed_session_turn(self._target.session_path)
@@ -569,6 +633,7 @@ class TerminalBroadcastManager:
             window_name=window_name,
             reply_text=reply_text,
             timestamp=timestamp,
+            user_input=latest_user_input,
         )
 
     def _get_latest_session_user_input(self) -> str:
@@ -594,7 +659,7 @@ class TerminalBroadcastManager:
         self._refresh_session_binding(terminal_user_input)
         latest_user_input = self._get_latest_session_user_input() or terminal_user_input
         self._maybe_print_user_input(latest_user_input)
-        session_event = self._poll_session_event(window_name)
+        session_event = self._poll_session_event(window_name, latest_user_input)
         if session_event is not None:
             if self._verbose and self._target is not None:
                 print(
@@ -681,6 +746,7 @@ class TerminalBroadcastManager:
             window_name=window_name,
             reply_text=reply_text,
             timestamp=time.time(),
+            user_input=latest_user_input,
         )
 
     def _get_openai_client(self) -> OpenAI:
@@ -689,7 +755,7 @@ class TerminalBroadcastManager:
                 self._openai_client = OpenAI()
             return self._openai_client
 
-    def _rewrite_and_speak(self, reply_text: str) -> None:
+    def _rewrite_and_speak(self, reply_text: str, user_input: str) -> None:
         stop_chime = threading.Event()
         if self._speak:
             threading.Thread(
@@ -699,6 +765,7 @@ class TerminalBroadcastManager:
         try:
             spoken = rewrite_for_speech_with_model(
                 reply_text,
+                user_input=user_input,
                 client=self._get_openai_client(),
                 model=self._speech_rewrite_model,
             )
@@ -729,8 +796,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--launch-codex",
-        action="store_true",
-        help="Open a fresh Terminal.app window and start codex before listening.",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Open a fresh Terminal.app window and start codex before listening. Enabled by default.",
     )
     parser.add_argument(
         "--initial-prompt",
@@ -746,13 +814,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--max-seconds",
         type=float,
-        default=30.0,
-        help="Maximum listen duration before exit. Use 0 or a negative value to listen until Ctrl+C.",
+        default=0.0,
+        help="Maximum listen duration before exit. Default is 0, which listens until Ctrl+C.",
     )
     parser.add_argument(
         "--speak",
-        action="store_true",
-        help="Use macOS say to read newly detected terminal text.",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Use macOS say to read newly detected terminal text. Enabled by default.",
     )
     parser.add_argument(
         "--silent-debug",
@@ -781,14 +850,14 @@ def main() -> int:
     args = build_parser().parse_args()
 
     target: TerminalTarget | None = None
-    if args.launch_codex:
+    if args.front_only:
+        target = None
+    elif args.launch_codex:
         target = launch_terminal_codex(
             working_directory=str(REPO_ROOT),
             initial_prompt=args.initial_prompt,
         )
         time.sleep(2.0)
-    if args.front_only:
-        target = None
 
     manager = TerminalBroadcastManager(
         speak=bool(args.speak) and not bool(args.silent_debug),

@@ -31,6 +31,10 @@ Rules:
 - Do not place the marker inside code blocks, diffs, patches, quoted text, or examples.
 - Do not emit any other completion markers.
 - Never include the marker anywhere except as the final line of the turn."""
+DEFAULT_STARTUP_CHECK_PROMPT = (
+    "Now reply with one short sentence telling me that this terminal session is ready "
+    "and that future replies will be monitored and broadcast automatically."
+)
 
 
 @dataclass(frozen=True)
@@ -336,14 +340,12 @@ def launch_terminal_codex(
 ) -> TerminalTarget:
     target_dir = working_directory or str(REPO_ROOT)
     launched_at = time.time()
+    effective_initial_prompt = initial_prompt or DEFAULT_STARTUP_CHECK_PROMPT
 
     script_path: str | None = None
-    if initial_prompt:
-        full_prompt = build_protocol_prompt(initial_prompt)
-        script_path = _write_launch_script(working_directory=target_dir, prompt=full_prompt)
-        shell_command = f"zsh {shlex.quote(script_path)}"
-    else:
-        shell_command = f"cd {shlex.quote(target_dir)} && codex --no-alt-screen"
+    full_prompt = build_protocol_prompt(effective_initial_prompt)
+    script_path = _write_launch_script(working_directory=target_dir, prompt=full_prompt)
+    shell_command = f"zsh {shlex.quote(script_path)}"
 
     applescript = f'''
 tell application "Terminal"
@@ -366,7 +368,7 @@ end tell
     target = TerminalTarget(
         window_id=int(window_text),
         tty=tty,
-        initial_prompt=initial_prompt,
+        initial_prompt=effective_initial_prompt,
         working_directory=target_dir,
         launched_at=launched_at,
     )
@@ -380,12 +382,11 @@ end tell
         except OSError:
             pass
 
-    if initial_prompt:
-        target = resolve_terminal_target_session(
-            target,
-            prompt_text=full_prompt,
-            timeout_seconds=6.0,
-        )
+    target = resolve_terminal_target_session(
+        target,
+        prompt_text=full_prompt,
+        timeout_seconds=6.0,
+    )
 
     return target
 

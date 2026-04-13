@@ -17,6 +17,7 @@ dependencies = [
 
 [project.scripts]
 realtime-asr = "realtime_asr.cli:main"
+codex-speak = "realtime_asr.codex_broadcast:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]

@@ -10,6 +10,7 @@ if str(ROOT) not in sys.path:
 
 from betalab.codexapp_server_bridge import launch_terminal_codex as ltc
 from betalab.codexapp_server_bridge.launch_terminal_codex import (
+    DEFAULT_STARTUP_CHECK_PROMPT,
     OUTPUT_COMPLETE_MARKER,
     TerminalTarget,
 )
@@ -61,6 +62,12 @@ def test_resolve_terminal_target_session_from_history(tmp_path, monkeypatch) -> 
     assert resolved.session_id == session_id
     assert resolved.session_path == str(session_path)
     assert ltc.load_terminal_binding(resolved).session_id == session_id
+
+
+def test_build_protocol_prompt_uses_default_startup_check_prompt() -> None:
+    prompt = ltc.build_protocol_prompt(DEFAULT_STARTUP_CHECK_PROMPT)
+    assert DEFAULT_STARTUP_CHECK_PROMPT in prompt
+    assert OUTPUT_COMPLETE_MARKER in prompt
 
 
 def test_terminal_broadcast_manager_prefers_completed_session_turn(
@@ -166,6 +173,43 @@ def test_terminal_broadcast_manager_prints_user_input_from_session(
     assert "请把这句话改得更学术一些：你好，我是小气。" in out
     assert "[reply]" in out
     assert "后台回复" in out
+
+
+def test_rewrite_for_speech_with_model_includes_user_input_context(monkeypatch) -> None:
+    captured = {}
+
+    class FakeCompletions:
+        def create(self, **kwargs):
+            captured.update(kwargs)
+            class Message:
+                content = "播报文本"
+
+            class Choice:
+                message = Message()
+
+            class Completion:
+                choices = [Choice()]
+
+            return Completion()
+
+    class FakeChat:
+        completions = FakeCompletions()
+
+    class FakeClient:
+        chat = FakeChat()
+
+    spoken = tbm.rewrite_for_speech_with_model(
+        "assistant reply",
+        user_input="user asks for a concise summary",
+        client=FakeClient(),
+    )
+
+    assert spoken == "播报文本"
+    system_message = captured["messages"][0]["content"]
+    user_message = captured["messages"][1]["content"]
+    assert "不要自动翻译成中文" in system_message
+    assert "<user_input>\nuser asks for a concise summary\n</user_input>" in user_message
+    assert "<chunk>\nassistant reply\n</chunk>" in user_message
 
 
 # Date noted: 2026-04-12
