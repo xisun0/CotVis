@@ -882,7 +882,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--speech-rewrite-model",
         default="gpt-4o-mini",
-        help="Model used to rewrite the completed reply into speech-ready Chinese.",
+        help="Model used to rewrite the completed reply into speech-ready text.",
     )
     parser.add_argument(
         "--verbose",

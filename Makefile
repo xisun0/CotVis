@@ -1,13 +1,19 @@
 PYTHON ?= python
 ARGS ?=
 
-.PHONY: setup run test setup-local commit-help
+.PHONY: setup run speak legacy-run test setup-local commit-help
 
 setup:
 	$(PYTHON) -m pip install --upgrade pip
 	$(PYTHON) -m pip install -e .
 
 run:
+	PYTHONPATH=src $(PYTHON) -m codex_speak $(ARGS)
+
+speak:
+	PYTHONPATH=src $(PYTHON) -m codex_speak $(ARGS)
+
+legacy-run:
 	PYTHONPATH=src $(PYTHON) -m realtime_asr.cli $(ARGS)
 
 test:

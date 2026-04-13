@@ -1,348 +1,142 @@
-# Voice Review CLI
+# codex-speak
 
-## Overview
+`codex-speak` is a terminal-side companion for Codex on macOS.
 
-This repository is being rebuilt as a voice-first manuscript review CLI.
+It launches or follows a real `Terminal.app` Codex session, binds that tab to
+the matching backend session log, extracts the completed assistant reply, and
+turns it into speech-ready output. It can either print the broadcast text or
+play it with OpenAI TTS.
 
-The target workflow is:
+## Demo
 
-1. Open a document review session from the terminal.
-2. Let the system read a manuscript aloud from the beginning or a chosen starting point.
-3. Interrupt by voice when a sentence or paragraph needs revision.
-4. Review candidate rewrites.
-5. Apply a local patch and continue reading.
+Add a short demo video here.
 
-The current codebase is in early rebuild status.
+Recommended demo flow:
 
-- Phase 0 is complete: old ASR/visualization code has been removed and a new package skeleton is in place.
-- Phase 1 is complete: Markdown parsing, paragraph classification, stable IDs, reading anchors, and a structured dry-run preview are working.
-- Phase 2 is complete: sentence-level reading runtime, terminal interaction, section announcements, navigation commands, and TTS demo backends are working.
-- Phase 3 is complete enough for spoken reading control: bilingual command normalization, explicit-trigger voice demo, and pause-based microphone turn ending are in place.
-- Stage 4B is now working: spoken requests can enter a sentence-level review loop with answer/rewrite branching, shared review memory, accept/discard decisions, and immediate sentence-level apply on accept.
+- run `codex-speak`
+- show the new Codex terminal opening
+- send one prompt
+- show `[user_input]`, `[reply]`, and `[spoken]`
+- let the audio playback be heard once
 
-## Current Scope
+GitHub-friendly options:
 
-### Implemented
-
-- Markdown and plain-text document loading
-- Paragraph segmentation
-- Conservative sentence segmentation
-- Paragraph classification
-- Reading priority model:
-  - `primary`
-  - `secondary`
-  - `skip`
-- Stable paragraph and sentence IDs inside the current document graph
-- Anchor-oriented session bootstrap
-- Structured dry-run preview for validation
-- Sentence-by-sentence reading demo
-- Interactive terminal demo for reading controls
-- Bilingual command normalization for interactive controls:
-  - English aliases
-  - Chinese aliases
-- Explicit-trigger voice demo with a typed ASR backend
-- Optional OpenAI microphone-backed ASR backend for `voice-demo`
-- Pause-based turn ending for microphone command capture
-- Stage 4B review loop for current-sentence requests with sentence-level apply
-- Section and abstract announcements before reading new parts
-- Paragraph / subsection / section navigation in the interactive demo
-- Demo TTS backends:
-  - `none`
-  - `console`
-  - `system`
-
-### Not Yet Implemented
-
-- Voice interruption
-- Broader document-context questions
-- Resume-after-edit behavior
+- embed a short GIF
+- link to an uploaded MP4
+- add a screenshot only if a video is not available yet
 
 ## Requirements
 
+- macOS
 - Python 3.11+
-- `pytest` for local validation
-- `pandoc` only if you want to generate Markdown test material from LaTeX yourself
+- `Terminal.app`, `osascript`, and `afplay`
+- `OPENAI_API_KEY`
 
 ## Setup
 
-```bash
-make setup
-```
-
-Optional beginner-friendly git setup:
+### Step 1. Clone the repository
 
 ```bash
-make setup-local
+git clone https://github.com/xisun0/CotVis.git
 ```
 
-## Main Demo
-
-The dry-run preview is still the fastest way to validate document parsing and anchor bootstrap.
-
-Run the real sample:
+### Step 2. Install the package
 
 ```bash
-make run ARGS="review examples/research_article_sample.md --dry-run"
+cd CotVis
+python3.11 -m pip install -e .
 ```
 
-This prints:
+The `.` in the install command means "install the project in the current
+directory", so this step must be run from the repository root.
 
-- document summary
-- paragraph counts
-- reading-priority counts
-- chosen starting point
-- current anchor state
-- current paragraph preview
-- neighboring skipped/readable blocks
+This does two things:
 
-Example alternate entrypoints:
+- installs the dependencies declared by this repo
+- registers `codex-speak` as a local command that points at this working tree
+
+After the install finishes, `codex-speak` can be run from any directory.
+
+### Step 3. Verify the command
 
 ```bash
-make run ARGS="review examples/research_article_sample.md --dry-run --match 'Industrial policy—targeted government interventions'"
-make run ARGS="review examples/research_article_sample.md --dry-run --start-paragraph 3"
+codex-speak --help
 ```
 
-## Reading Demo
+## Quick Start
 
-Phase 2 adds a sentence-by-sentence reading runtime demo.
-
-Run a non-speaking version:
+After setup, the shortest path is simply:
 
 ```bash
-make run ARGS="review examples/research_article_sample.md --read-demo --max-sentences 5 --tts none"
+codex-speak
 ```
 
-Run a simple terminal-controlled interactive version:
+The default bare command now does all of the following:
+
+- launch a new Codex terminal
+- keep listening until you stop it
+- enable spoken playback
+
+If you want to seed the first turn immediately:
 
 ```bash
-make run ARGS="review examples/research_article_sample.md --interactive-demo --tts none"
+codex-speak --initial-prompt "请把这句话改得更学术一些：你好，我是小气。"
 ```
 
-Run the explicit-trigger voice demo skeleton:
+If you want text only without audio playback:
 
 ```bash
-make run ARGS="review examples/research_article_sample.md --voice-demo --tts none"
+codex-speak --no-speak --silent-debug
 ```
 
-Run the same demo with the OpenAI microphone backend:
+If you want to follow the current front terminal instead of launching a new one:
 
 ```bash
-OPENAI_API_KEY=... make run ARGS="review examples/research_article_sample.md --voice-demo --tts none --asr openai --command-language zh --voice-listen-seconds 6 --voice-silence-seconds 0.8"
+codex-speak --front-only --no-launch-codex --silent-debug
 ```
 
-If you want to bias command recognition toward one language, add:
+If you want to launch Codex in a specific directory:
 
 ```bash
---command-language zh
+codex-speak --working-directory /path/to/project
 ```
 
-or:
+## Approximate Cost
 
-```bash
---command-language en
-```
+These estimates cover only the extra broadcast pipeline used by `codex-speak`:
 
-The reading demos now announce structural markers before prose when available, for example:
+- the `gpt-4o-mini` rewrite step
+- the optional `gpt-4o-mini-tts` speech generation step
 
-- `Abstract`
-- `1 Introduction`
-- `1.1 Background`
+They do not include the separate cost of the main Codex conversation itself.
 
-Supported interactive commands:
+Current rough estimates:
 
-- `pause`
-- `resume`
-- `next`
-- `previous`
-- `again`
-- `paragraph`
-- `next paragraph`
-- `previous paragraph`
-- `next subsection`
-- `previous subsection`
-- `next section`
-- `previous section`
-- `status`
-- `jump paragraph N`
-- `jump match TEXT`
-- `help`
-- `quit`
+- text-only mode such as `codex-speak --no-speak --silent-debug`
+  - about `$0.0002` per turn
+  - about `$0.02` for `100` turns
+- spoken mode such as bare `codex-speak`
+  - about `$0.0026` to `$0.0098` per turn
+  - about `$0.26` to `$0.98` for `100` turns
 
-The interactive demo accepts English and Chinese aliases for the same control intent. Examples:
-
-- `pause` / `暂停`
-- `resume` / `继续`
-- `next` / `下一句`
-- `previous` / `上一句`
-- `paragraph` / `本段`
-- `next section` / `下一节`
-- `status` / `状态`
-- `quit` / `退出`
-
-The current `--voice-demo` uses Phase 3 Plan B:
-
-- press `Enter` to trigger one listening turn
-- in `--asr typed` mode, type a simulated spoken command at the listening prompt
-- in `--asr openai` mode, speak once and let the recorder stop on silence
-- `:skip` continues reading without issuing a command
-- `:quit` exits the voice demo
-
-The typed backend is still useful for validating the trigger -> transcript -> command -> runtime loop without involving the microphone.
-
-You can also switch `--voice-demo` to `--asr openai` to record one microphone turn and transcribe it with `gpt-4o-mini-transcribe`. The OpenAI path now records until a short silence is detected, up to the configured maximum turn length. This is still explicit-trigger mode, not the later automatic listening-window design.
-For short command turns, `--command-language zh` or `--command-language en` can improve recognition stability by narrowing the language space. `auto` keeps language detection open.
-
-Useful tuning flags for the microphone path:
-
-- `--voice-listen-seconds 6`
-  - maximum recording length for one command turn
-- `--voice-silence-seconds 0.8`
-  - how long the system waits for silence before stopping
-- `--voice-energy-threshold 0.005`
-  - speech activity threshold for start/end detection
-
-## Stage 4B Review Loop
-
-Current request behavior is:
-
-- If an utterance matches a known control command, it is executed immediately.
-- Any other non-empty utterance is treated as a review request.
-- The system locks onto the current sentence and keeps a sentence-level review cycle with shared history.
-- The model first decides whether the request is an `answer` or a `rewrite`.
-- `answer` requests return a grounded short answer and pause reading without ending the current review cycle.
-- `rewrite` requests generate a single proposal with:
-  - `rationale`
-  - `revision`
-- The session then enters `awaiting_decision`.
-
-Current decision commands in `awaiting_decision`:
-
-- `用这个` / `可以` / `就这样` -> accept the current proposal
-- `放弃` / `算了` -> discard the current proposal
-
-Current apply behavior:
-
-- `用这个` / `可以` / `就这样` immediately applies the accepted proposal to the current sentence in the in-memory document graph
-- the current paragraph is rebuilt locally after the sentence replacement
-- the reading anchor is relocated to the updated sentence
-- the review cycle is cleared and the session moves to `paused`
-- after apply, you can use `again`, `paragraph`, or `next` to verify the updated text
-- the updated document is saved to disk immediately:
-  - if the source file is tracked by git, the original file is overwritten
-  - otherwise, a sibling `*.reviewed.md` copy is written and future saves continue to update that copy
-- if the target file changed on disk during the session, saving is blocked with a conflict error instead of overwriting external changes
-
-Current limitation:
-
-- paragraph-level review is not implemented yet
-- review targeting is still anchored to the current sentence
-- `again` and `paragraph` replay content for listening, but do not retarget follow-up review requests
-- after replaying a full paragraph or discussing a later sentence, cross-sentence follow-up rewrites are not guaranteed to bind to the sentence the user has in mind
-
-## Voice Demo Troubleshooting
-
-If microphone mode returns `no speech detected`:
-
-- Start with Chinese or English explicitly:
-  - `--command-language zh`
-  - `--command-language en`
-- Use a full short command first:
-  - `下一句`
-  - `继续读`
-  - `next section`
-- Speak after the `[listening] recording until silence ...` line appears.
-- Lower the speech threshold if your microphone is quiet:
-  - `--voice-energy-threshold 0.005`
-  - if needed, try `0.002`
-- Increase the maximum turn length if you pause before speaking:
-  - `--voice-listen-seconds 8`
-
-If you want to validate the control loop without microphone variables, use:
-
-```bash
-make run ARGS="review examples/research_article_sample.md --voice-demo --tts none --asr typed"
-```
-
-Current jump behavior:
-
-- `jump paragraph N` jumps to the `N`th preferred paragraph in the reading flow
-- `jump match TEXT` currently jumps to the first readable paragraph that contains the given text
-- multi-candidate disambiguation is not implemented yet
-- `next/previous subsection` use the current finest section path rather than a hard-coded heading depth
-- `next/previous section` use the top-level section path
-
-Command semantics:
-
-- `previous` moves back one sentence and rereads it
-- `again` rereads the current sentence without moving the anchor
-- `paragraph` rereads the full current paragraph from the beginning without moving the anchor
-- `next paragraph` and `previous paragraph` jump between readable paragraphs
-- `next subsection` and `previous subsection` move across the current finest subsection boundary
-- `next section` and `previous section` move across top-level sections
+These are ballpark numbers. Longer replies, longer spoken output, and future
+OpenAI pricing changes will move the total.
 
 ## Testing
 
-Run the current automated checks:
+Run the focused broadcast-manager tests:
 
 ```bash
-make test
+pytest -q tests/test_terminal_broadcast_manager.py
 ```
 
-Current tests cover:
+Implementation notes for the broadcast pipeline live in
+[`betalab/codexapp_server_bridge/README.md`](betalab/codexapp_server_bridge/README.md).
+Historical and legacy notes live in [`legacy/README.md`](legacy/README.md).
 
-- Markdown loading
-- paragraph kind classification
-- start-paragraph location
-- anchor bootstrap
-- reading progression
-- pause/resume/repeat
-- paragraph/subsection/section navigation
-- section and abstract announcement behavior
-- jump paragraph and jump match behavior
-- bilingual command normalization
-- explicit trigger turn control
-- typed ASR command capture
-- pause-based microphone turn ending
-- patch-target skeleton behavior
+## Current Limits
 
-## Key Sample
-
-The main realistic test sample is:
-
-- [examples/research_article_sample.md](/Users/sxi/SunXi/1-Research/14_CotVis/examples/research_article_sample.md)
-
-This sample was converted from a LaTeX research draft and intentionally retains structural noise such as wrappers and front matter, which makes it useful for parser validation.
-
-## Design Notes
-
-Two planning documents are especially relevant:
-
-- [docs/voice_review_cli_development_plan.md](/Users/sxi/SunXi/1-Research/14_CotVis/docs/voice_review_cli_development_plan.md)
-- [docs/editing_identity_strategy.md](/Users/sxi/SunXi/1-Research/14_CotVis/docs/editing_identity_strategy.md)
-- [docs/navigation_and_jump_strategy.md](/Users/sxi/SunXi/1-Research/14_CotVis/docs/navigation_and_jump_strategy.md)
-
-The important architecture rule is:
-
-- `index` is display order
-- `id` is object identity inside the current document graph
-- reading progress should be tracked by anchors, not raw indexes
-
-## Current Package Layout
-
-- `src/realtime_asr/cli.py` — CLI entrypoint, dry-run preview, reading demo, interactive demo
-- `src/realtime_asr/document/` — document loading, parsing, locating, models
-- `src/realtime_asr/runtime/` — session bootstrap, reading navigator, and state machine
-- `src/realtime_asr/review/` — placeholder review interfaces
-- `src/realtime_asr/patching/` — sentence-level apply and save planning
-- `src/realtime_asr/voice/` — demo TTS backends and future voice adapters
-- `tests/` — dry-run, reading, review loop, patching, and voice demo coverage
-
-## Next Step
-
-The next implementation focus is completing the end-to-end voice review workflow around the current Stage 4B baseline:
-
-- voice interruption during reading instead of explicit-trigger turns only
-- broader document-context questions beyond the current sentence-level review target
-- resume-after-edit behavior so reading can continue more naturally after an accepted rewrite
-- paragraph-level review instead of sentence-only review
-- file reload or rebase UX for external on-disk edits detected during a session
+- `codex-speak` currently supports macOS `Terminal.app` only
+- it requires a working `OPENAI_API_KEY`
+- spoken output may still be lightly rewritten for summary or editing-style replies
+- the tool is best suited to normal Codex terminal replies, not every possible terminal program or screen layout

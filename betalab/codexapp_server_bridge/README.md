@@ -1,8 +1,13 @@
-# CodexApp Server Bridge And Broadcast Lab
+# Codex Speak Implementation Notes
 
-This directory contains several related experiments around Codex integration.
-The current focus is no longer only the SDK bridge; it also includes a
-Terminal.app-based listening and speech pipeline.
+This directory now serves two roles:
+
+- the current implementation backend for the repo's main `codex-speak` flow
+- a holding area for related Codex bridge, SDK, and PTY experiments
+
+The primary user-facing entrypoint for this branch is documented in the root
+[`README.md`](../../README.md). This file focuses on the implementation details
+inside the broadcast pipeline and the surrounding lab code.
 
 ## Current Goal
 
@@ -60,7 +65,10 @@ npm install
 ```
 
 Install the editable Python package once if you want to call the broadcast command
-from any working directory:
+from any working directory. This command must be run from the repository root,
+because `.` means "install the current directory as a Python project".
+
+Then run:
 
 ```bash
 python3.11 -m pip install -e .
