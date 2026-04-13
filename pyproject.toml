@@ -12,7 +12,6 @@ dependencies = [
     "openai>=1.0",
     "opencc-python-reimplemented>=0.1.7",
     "numpy>=1.26",
-    "sounddevice>=0.4",
 ]
 
 [project.scripts]
@@ -21,6 +20,7 @@ codex-speak = "realtime_asr.codex_broadcast:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+mic = ["sounddevice>=0.4"]
 
 [tool.setuptools]
 package-dir = {"" = "src"}

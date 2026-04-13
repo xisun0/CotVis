@@ -9,21 +9,10 @@ play it with OpenAI TTS.
 
 ## Demo
 
-Add a short demo video here.
+`codex-speak` launches a Codex terminal, captures the completed assistant reply,
+and broadcasts it as text or speech.
 
-Recommended demo flow:
-
-- run `codex-speak`
-- show the new Codex terminal opening
-- send one prompt
-- show `[user_input]`, `[reply]`, and `[spoken]`
-- let the audio playback be heard once
-
-GitHub-friendly options:
-
-- embed a short GIF
-- link to an uploaded MP4
-- add a screenshot only if a video is not available yet
+https://github.com/user-attachments/assets/b707f7b3-f938-4ef6-8ea7-bf1d791d1d66
 
 ## Requirements
 
