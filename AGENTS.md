@@ -10,7 +10,6 @@ It is written for beginners and focuses on practical rules.
 3. Make small, focused code changes.
 4. Run a quick check (at minimum: code compiles, CLI starts).
 5. Commit with a clear message.
-6. Link the commit to the issue with `Refs #<issue_number>`.
 
 ## Commit Convention
 Use this format:
@@ -44,10 +43,6 @@ Examples:
 - `feat(cli): add --no-jsonl switch for terminal output`
 - `fix(context): prevent duplicate counting when final arrives`
 - `docs(docs): add microphone permission troubleshooting`
-
-For partial progress on an issue, add this line in commit body:
-
-`Refs #1`
 
 ## Repo Boundaries
 - Keep `README.md` user-facing (setup/run/usage).

@@ -1,0 +1,8 @@
+{
+  "name": "codexapp-server-bridge-demo",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@openai/codex-sdk": "^0.120.0"
+  }
+}

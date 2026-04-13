@@ -5,22 +5,22 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "realtime-asr"
 version = "0.1.0"
-description = "MVP macOS streaming ASR with context-managed top terms output"
+description = "Voice-first manuscript review CLI"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-  "pyobjc-core>=10.0; platform_system == 'Darwin'",
-  "pyobjc-framework-Speech>=10.0; platform_system == 'Darwin'",
-  "pyobjc-framework-AVFoundation>=10.0; platform_system == 'Darwin'",
-  "wordfreq>=3.1.1"
+    "openai>=1.0",
+    "opencc-python-reimplemented>=0.1.7",
+    "numpy>=1.26",
 ]
 
 [project.scripts]
 realtime-asr = "realtime_asr.cli:main"
+codex-speak = "realtime_asr.codex_broadcast:main"
 
 [project.optional-dependencies]
-llm = ["llama-cpp-python>=0.2.90"]
 dev = ["pytest>=8.0"]
+mic = ["sounddevice>=0.4"]
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -28,6 +28,3 @@ include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
-[tool.setuptools.package-data]
-realtime_asr = ["web/static/*.html"]

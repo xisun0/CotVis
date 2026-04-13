@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *.egg-info/
+node_modules/
 
 # Local runtime logs
 transcript.log

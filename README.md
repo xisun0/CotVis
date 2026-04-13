@@ -1,236 +1,131 @@
-# CotVis — Chain-of-Thought Visualization
+# codex-speak
 
-## Ultimate Goal
+`codex-speak` is a terminal-side companion for Codex on macOS.
 
-When a person speaks, their ideas do not arrive all at once — they unfold, shift, and build on each other over time. CotVis makes that process visible to an audience in real time.
+It launches or follows a real `Terminal.app` Codex session, binds that tab to
+the matching backend session log, extracts the completed assistant reply, and
+turns it into speech-ready output. It can either print the broadcast text or
+play it with OpenAI TTS.
 
-The ultimate goal is a **standalone tool that visualizes the live chain of thought of a human speaker** — not just which topics are present, but how concepts emerge, gain weight, fade, and connect as the talk or conversation progresses. An audience watching the visualization should be able to follow the arc of the speaker's thinking without reading a transcript.
+## Demo
 
-This goes beyond a static word cloud. The envisioned end state is a display that communicates:
+`codex-speak` launches a Codex terminal, captures the completed assistant reply,
+and broadcasts it as text or speech.
 
-- **What** the speaker is currently focused on
-- **How** the focus has shifted since they began
-- **Which concepts are rising or fading** in the current flow of speech
-
-## Roadmap
-
-| Phase | Focus | Delivers |
-|---|---|---|
-| **1 — Signal correctness** | Fix stable-text diff logic; add deterministic replay tests | Trustworthy term weights as foundation for everything above |
-| **2 — Concept state model** | Introduce per-term history: score, velocity, age, source | Backend knows whether each concept is new, rising, stable, or fading |
-| **3 — Concept quality** | Move beyond word frequency: phrase chunking, named entities | The right concepts are tracked, not just the most frequent words |
-| **4 — Shift & connection detection** | Co-occurrence graph; structured events (`focus_changed`, `concept_rising`, `concept_fading`) | Backend emits semantic events the UI can act on directly |
-| **5 — Flow visualization** | 3-panel UI: current focus + trend timeline + concept-link graph; push transport (SSE/WebSocket) | Audience can see *what*, *how*, and *which* concepts are moving |
-| **6 — Evaluation & hardening** | Replay benchmark set; measurable targets for latency, trend stability, false shift rate | Demonstrated, reliable quality ahead of live use |
-
-Productization (config profiles, export, cross-platform backend) is deferred until after Phase 6.
-
-## Current Stage (MVP)
-
-This repository hosts an MVP for:
-
-`macOS Speech Framework streaming ASR -> context management -> TopTerms JSONL`
+https://github.com/user-attachments/assets/b707f7b3-f938-4ef6-8ea7-bf1d791d1d66
 
 ## Requirements
 
-- macOS 13+
+- macOS
 - Python 3.11+
-- Microphone + Speech Recognition permissions
+- `Terminal.app`, `osascript`, and `afplay`
+- `OPENAI_API_KEY`
 
 ## Setup
 
-```bash
-make setup
-```
-
-Optional beginner-friendly git setup:
+### Step 1. Clone the repository
 
 ```bash
-make setup-local
+git clone https://github.com/xisun0/CotVis.git
 ```
 
-This configures a commit message template (`.gitmessage.txt`) for this repo.
-You can also print commit examples with:
+### Step 2. Install the package
 
 ```bash
-make commit-help
+cd CotVis
+python3.11 -m pip install -e .
 ```
 
-## Run
+The `.` in the install command means "install the project in the current
+directory", so this step must be run from the repository root.
+
+This does two things:
+
+- installs the dependencies declared by this repo
+- registers `codex-speak` as a local command that points at this working tree
+
+After the install finishes, `codex-speak` can be run from any directory.
+
+### Step 3. Verify the command
 
 ```bash
-make run
+codex-speak --help
 ```
 
-Default CLI behavior:
+## Quick Start
 
-- prints transcript updates (`[PARTIAL] ...` / `[FINAL] ...`)
-- prints one TopTerms JSON line every 2 seconds
-- term ranking uses a local LM-style scorer to downweight generic words and surface more meaningful topic terms
-
-Useful switches:
-
-- `--lang en-US` (default) or `--lang zh-CN`
-- `--no-print-transcript` to hide transcript logs
-- `--no-jsonl` to hide top-term JSON output
-- `--update-interval`, `--final-window`, `--partial-window`, `--top-k`
-- `--full-session` to keep all FINAL transcript from the whole session (no 60s pruning)
-
-## Optional Local LLM Reranking
-
-You can enable a local instruct model (GGUF) to refine topic terms:
+After setup, the shortest path is simply:
 
 ```bash
-pip install -e ".[llm]"
-make run-web PYTHON=python3.11 ARGS="--llm-model /path/to/model.gguf --open-browser"
+codex-speak
 ```
 
-Recommended small models:
+The default bare command now does all of the following:
 
-- Qwen2.5-3B-Instruct (GGUF)
-- Llama-3.2-3B-Instruct (GGUF)
+- launch a new Codex terminal
+- keep listening until you stop it
+- enable spoken playback
 
-Useful controls:
-
-- `--llm-interval` (default 12s): how often to query local LLM
-- `--llm-weight` (default 2.0): blend strength of LLM suggestions
-- `--llm-top-k` (default 30): max LLM terms
-- `--llm-ctx` (default 2048): context size for llama.cpp
-
-Optional local path management (`.env.local`, untracked):
+If you want to seed the first turn immediately:
 
 ```bash
-cat > .env.local <<'EOF'
-LLM_MODEL_PATH=/path/to/model.gguf
-EOF
-set -a; source .env.local; set +a
-make test-nlp PYTHON=python3.11 ARGS="--llm-model $LLM_MODEL_PATH --llm-primary --open-browser"
+codex-speak --initial-prompt "请把这句话改得更学术一些：你好，我是小气。"
 ```
-- `--llm-max-tokens` (default 420): max tokens in LLM response
-- `--llm-primary` / `--no-llm-primary` (default on): when enabled, LLM scores replace rather than augment the frequency-based ranking
 
-## Run With Live Word Cloud
+If you want text only without audio playback:
 
 ```bash
-make run-web
+codex-speak --no-speak --silent-debug
 ```
 
-One-command demo (start server + open browser + play sample audio + stop):
+If you want to follow the current front terminal instead of launching a new one:
 
 ```bash
-make demo PYTHON=python3.11
+codex-speak --front-only --no-launch-codex --silent-debug
 ```
 
-Note: this still uses microphone input. Keep speaker volume audible so the mic can capture playback.
-
-By default this starts a local UI server at:
-
-`http://127.0.0.1:8765`
-
-UI review pages:
-
-- Active page: `http://127.0.0.1:8765/wordcloud.html`
-- Baseline snapshot: `http://127.0.0.1:8765/wordcloud_v1_baseline.html`
-- Refined snapshot: `http://127.0.0.1:8765/wordcloud_v2_refined.html`
-- Final snapshot: `http://127.0.0.1:8765/wordcloud_v3_final.html`
-
-Optional examples:
-
-- Chinese ASR + web UI:
-  - `make run-web PYTHON=python3.11 ARGS="--lang zh-CN"`
-- Custom UI port:
-  - `make run-web PYTHON=python3.11 ARGS="--ui-port 8877"`
-- Auto-open browser:
-  - `make run-web PYTHON=python3.11 ARGS="--open-browser"`
-
-## Regenerate Local Sample Audio
-
-Sample text is stored in:
-
-`examples/sample_script.txt`
-
-Regenerate WAV test audio anytime:
+If you want to launch Codex in a specific directory:
 
 ```bash
-make sample-wav
+codex-speak --working-directory /path/to/project
 ```
 
-This creates `examples/sample.wav` locally (not committed).
+## Approximate Cost
 
-## Two-Part Testing
+These estimates cover only the extra broadcast pipeline used by `codex-speak`:
 
-Deterministic local regression tests:
+- the `gpt-4o-mini` rewrite step
+- the optional `gpt-4o-mini-tts` speech generation step
+
+They do not include the separate cost of the main Codex conversation itself.
+
+Current rough estimates:
+
+- text-only mode such as `codex-speak --no-speak --silent-debug`
+  - about `$0.0002` per turn
+  - about `$0.02` for `100` turns
+- spoken mode such as bare `codex-speak`
+  - about `$0.0026` to `$0.0098` per turn
+  - about `$0.26` to `$0.98` for `100` turns
+
+These are ballpark numbers. Longer replies, longer spoken output, and future
+OpenAI pricing changes will move the total.
+
+## Testing
+
+Run the focused broadcast-manager tests:
 
 ```bash
-make test PYTHON=python3.11
+pytest -q tests/test_terminal_broadcast_manager.py
 ```
 
-1) Demo / ASR smoke test (starts server, plays sample audio via mic loopback, prints output):
+Implementation notes for the broadcast pipeline live in
+[`betalab/codexapp_server_bridge/README.md`](betalab/codexapp_server_bridge/README.md).
+Historical and legacy notes live in [`legacy/README.md`](legacy/README.md).
 
-```bash
-make test-asr PYTHON=python3.11
-```
+## Current Limits
 
-2) Transcript-understanding test (simulated live stream from text):
-
-```bash
-make test-nlp PYTHON=python3.11
-```
-
-This second mode replays `examples/sample_script.txt` as a live transcript stream
-(`PARTIAL` + `FINAL`) and updates the same term pipeline/UI, without microphone dependency.
-
-## Quick Validation
-
-1. Run `make run`.
-2. If prompted, allow:
-   - Speech Recognition
-   - Microphone
-3. Speak continuously for ~20 seconds.
-4. Confirm terminal shows:
-   - transcript lines marked `PARTIAL` and `FINAL`
-   - JSON output every 2 seconds with changing `terms`
-5. Press `Ctrl+C` to stop.
-
-For web mode validation:
-
-1. Run `make run-web`.
-2. Open the printed URL in browser.
-3. Speak and confirm words resize/reflow every ~2 seconds without manual refresh.
-
-## macOS Permission Path
-
-If permission prompts were dismissed or denied, enable manually:
-
-- `System Settings -> Privacy & Security -> Microphone`
-- `System Settings -> Privacy & Security -> Speech Recognition`
-
-Then re-run `make run`.
-
-## Troubleshooting
-
-`Failed to start backend: Speech recognition permission is not granted`
-- Enable Speech Recognition permission in system settings and retry.
-
-`Failed to start backend: Microphone permission is not granted`
-- Enable Microphone permission in system settings and retry.
-
-`Failed to start backend: Speech recognizer is currently unavailable`
-- Check internet connectivity and macOS speech availability, then retry.
-
-`Failed to start backend: No audio input device found`
-- Connect/enable a microphone and verify system input device settings.
-
-## Package Layout
-
-- `src/realtime_asr/events.py` — `TranscriptEvent` and `TopTermsEvent` dataclasses
-- `src/realtime_asr/cli.py` — main entrypoint and run loop
-- `src/realtime_asr/simulate_transcript.py` — mic-free simulation mode from a text file
-- `src/realtime_asr/asr_backend/base.py` — backend interface
-- `src/realtime_asr/asr_backend/mac_speech.py` — macOS Speech Framework streaming backend
-- `src/realtime_asr/context/tokenizer.py` — tokenization and stopwords (EN + ZH)
-- `src/realtime_asr/context/manager.py` — rolling context window and TopTerms computation
-- `src/realtime_asr/lm/scorer.py` — Zipf-frequency downweighting and bigram phrase scoring
-- `src/realtime_asr/lm/llm_reranker.py` — optional local GGUF model reranking
-- `src/realtime_asr/web/server.py` — HTTP server serving `/terms` JSON and static UI
-- `src/realtime_asr/web/static/` — word cloud HTML pages
+- `codex-speak` currently supports macOS `Terminal.app` only
+- it requires a working `OPENAI_API_KEY`
+- spoken output may still be lightly rewritten for summary or editing-style replies
+- the tool is best suited to normal Codex terminal replies, not every possible terminal program or screen layout

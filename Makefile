@@ -1,53 +1,23 @@
-PYTHON ?= python3
+PYTHON ?= python
 ARGS ?=
-DEMO_PORT ?= 8765
-DEMO_TAIL_SEC ?= 8
 
-.PHONY: setup setup-llm run run-web demo test test-asr test-nlp sample-wav setup-local commit-help
+.PHONY: setup run speak legacy-run test setup-local commit-help
 
 setup:
 	$(PYTHON) -m pip install --upgrade pip
 	$(PYTHON) -m pip install -e .
 
-setup-llm:
-	$(PYTHON) -m pip install --upgrade pip
-	$(PYTHON) -m pip install -e ".[llm]"
-
 run:
-	$(PYTHON) -m realtime_asr.cli $(ARGS)
+	PYTHONPATH=src $(PYTHON) -m codex_speak $(ARGS)
 
-run-web:
-	$(PYTHON) -m realtime_asr.cli --serve-ui $(ARGS)
+speak:
+	PYTHONPATH=src $(PYTHON) -m codex_speak $(ARGS)
 
-demo: sample-wav
-	@echo "Starting CotVis demo on http://127.0.0.1:$(DEMO_PORT)"
-	@set -e; \
-	$(PYTHON) -m realtime_asr.cli --serve-ui --open-browser --ui-port $(DEMO_PORT) $(ARGS) > /tmp/cotvis_demo.log 2>&1 & \
-	ASR_PID=$$!; \
-	cleanup() { kill $$ASR_PID >/dev/null 2>&1 || true; }; \
-	trap cleanup EXIT INT TERM; \
-	sleep 3; \
-	afplay examples/sample.wav; \
-	sleep $(DEMO_TAIL_SEC); \
-	cleanup; \
-	trap - EXIT INT TERM; \
-	echo "Demo finished. Recent output:"; \
-	tail -n 40 /tmp/cotvis_demo.log
-
-test-asr: demo
+legacy-run:
+	PYTHONPATH=src $(PYTHON) -m realtime_asr.cli $(ARGS)
 
 test:
-	$(PYTHON) -m pytest tests/test_context_manager.py
-
-test-nlp:
-	$(PYTHON) -m realtime_asr.simulate_transcript --serve-ui --open-browser $(ARGS)
-
-sample-wav:
-	mkdir -p examples
-	say -v Samantha -f examples/sample_script.txt -o examples/sample.aiff
-	afconvert -f WAVE -d LEI16@16000 -c 1 examples/sample.aiff examples/sample.wav
-	rm -f examples/sample.aiff
-	@echo "Generated examples/sample.wav"
+	PYTHONPATH=src $(PYTHON) -m pytest tests
 
 setup-local:
 	git config commit.template .gitmessage.txt
@@ -58,7 +28,6 @@ commit-help:
 	@echo "  <type>(<scope>): <short summary>"
 	@echo ""
 	@echo "Examples:"
-	@echo "  feat(asr): add macOS speech streaming callback"
-	@echo "  feat(cli): print top terms every 2 seconds"
-	@echo "  fix(context): avoid double counting final transcript text"
-	@echo "  docs(docs): add troubleshooting for missing mic permission"
+	@echo "  feat(cli): add Markdown review session bootstrap"
+	@echo "  feat(context): add sentence locator for review flow"
+	@echo "  docs(docs): add voice review CLI setup notes"
