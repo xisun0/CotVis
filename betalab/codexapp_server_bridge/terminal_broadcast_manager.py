@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import difflib
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -17,15 +18,25 @@ try:
     from .launch_terminal_codex import (
         OUTPUT_COMPLETE_MARKER,
         TERMINAL_OUTPUT_PROTOCOL,
+        SessionTurn,
         TerminalTarget,
+        load_terminal_binding,
         launch_terminal_codex,
+        read_latest_completed_session_turn,
+        read_latest_session_user_input,
+        resolve_terminal_target_session,
     )
 except ImportError:
     from launch_terminal_codex import (
         OUTPUT_COMPLETE_MARKER,
         TERMINAL_OUTPUT_PROTOCOL,
+        SessionTurn,
         TerminalTarget,
+        load_terminal_binding,
         launch_terminal_codex,
+        read_latest_completed_session_turn,
+        read_latest_session_user_input,
+        resolve_terminal_target_session,
     )
 
 
@@ -236,6 +247,59 @@ def has_trailing_completion_marker(text: str) -> bool:
     return False
 
 
+def reply_fingerprint(text: str) -> str:
+    # Terminal reflow frequently changes only line breaks / indentation while
+    # leaving the semantic reply unchanged. Ignore all whitespace for
+    # completion-level dedupe so a rewrapped old reply is not replayed.
+    return re.sub(r"\s+", "", text)
+
+
+def extract_latest_user_input(text: str) -> str:
+    latest = ""
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line.startswith("›"):
+            continue
+        candidate = line.removeprefix("›").strip()
+        if not candidate:
+            continue
+        latest = candidate
+    return latest
+
+
+def normalize_user_input_for_display(text: str, target: TerminalTarget | None) -> str:
+    cleaned = text.strip()
+    if not cleaned:
+        return ""
+    prefix = f"{TERMINAL_OUTPUT_PROTOCOL}\n\nUser request:\n"
+    if cleaned.startswith(prefix):
+        cleaned = cleaned[len(prefix) :].strip()
+    if target is not None and target.initial_prompt and cleaned == target.initial_prompt.strip():
+        return cleaned
+    return cleaned
+
+
+def spoken_reply_fingerprint(text: str) -> str:
+    # Ignore punctuation / wrapping noise when suppressing accidental replays.
+    alnum_only = re.sub(r"[^\w\u4e00-\u9fff]+", "", text, flags=re.UNICODE)
+    return alnum_only.casefold()
+
+
+def replies_are_effectively_same(current: str, previous: str) -> bool:
+    current_fp = spoken_reply_fingerprint(current)
+    previous_fp = spoken_reply_fingerprint(previous)
+    if not current_fp or not previous_fp:
+        return False
+    if current_fp == previous_fp:
+        return True
+    if current_fp in previous_fp or previous_fp in current_fp:
+        shorter = min(len(current_fp), len(previous_fp))
+        longer = max(len(current_fp), len(previous_fp))
+        if longer and shorter / longer >= 0.9:
+            return True
+    return difflib.SequenceMatcher(a=current_fp, b=previous_fp).ratio() >= 0.95
+
+
 def strip_injected_prompt_text(text: str, target: TerminalTarget | None) -> str:
     if target is None:
         return text
@@ -392,12 +456,15 @@ class TerminalBroadcastManager:
         speech_rewrite_model: str = "gpt-4o-mini",
         verbose: bool = False,
     ) -> None:
+        self._target = load_terminal_binding(target) if target is not None else None
         self._last_reply_text = ""
         self._reply_buffer = ""
-        self._last_completed_reply_text = ""
+        self._last_completed_reply_fingerprint = ""
+        self._last_emitted_reply_text = ""
+        self._last_session_turn_id = ""
+        self._last_emitted_user_input = ""
         self._speak = speak
         self._print_speak_text = print_speak_text
-        self._target = target
         self._speech_rewrite_model = speech_rewrite_model
         self._openai_client: OpenAI | None = None
         self._openai_client_lock = threading.Lock()
@@ -425,16 +492,131 @@ class TerminalBroadcastManager:
             )
         self._last_activity_chime_time = time.time()
 
+    def _refresh_session_binding(self, latest_user_input: str) -> None:
+        if self._target is None:
+            return
+        refreshed = load_terminal_binding(self._target)
+        if refreshed.session_id and refreshed.session_path:
+            self._target = refreshed
+            return
+        prompt_text: str | None = None
+        if refreshed.initial_prompt and not refreshed.session_id:
+            prompt_text = (
+                f"{TERMINAL_OUTPUT_PROTOCOL}\n\nUser request:\n{refreshed.initial_prompt}"
+            )
+        elif latest_user_input:
+            prompt_text = latest_user_input
+        if not prompt_text:
+            self._target = refreshed
+            return
+        self._target = resolve_terminal_target_session(
+            refreshed,
+            prompt_text=prompt_text,
+            timeout_seconds=0.0,
+        )
+
+    def _build_event_from_reply(
+        self,
+        *,
+        window_name: str,
+        reply_text: str,
+        timestamp: float,
+    ) -> BroadcastEvent | None:
+        if replies_are_effectively_same(reply_text, self._last_emitted_reply_text):
+            if self._verbose:
+                print("[verbose] suppress_replay same_as_last_emitted=True", file=sys.stderr)
+            return None
+        self._last_emitted_reply_text = reply_text
+
+        if self._print_speak_text:
+            print("")
+            print("[reply]")
+            print(reply_text.rstrip())
+
+        event = BroadcastEvent(
+            window_name=window_name,
+            text=reply_text,
+            timestamp=timestamp,
+        )
+
+        if self._speak or self._print_speak_text:
+            threading.Thread(
+                target=self._rewrite_and_speak,
+                args=(reply_text,),
+                daemon=True,
+            ).start()
+
+        return event
+
+    def _poll_session_event(self, window_name: str) -> BroadcastEvent | None:
+        if self._target is None or not self._target.session_path:
+            return None
+        session_turn = read_latest_completed_session_turn(self._target.session_path)
+        if session_turn is None:
+            return None
+        if session_turn.turn_id == self._last_session_turn_id:
+            return None
+        self._last_session_turn_id = session_turn.turn_id
+        reply_text = remove_completion_markers(session_turn.text).strip()
+        if not reply_text:
+            return None
+        timestamp = (
+            float(session_turn.completed_at)
+            if session_turn.completed_at is not None
+            else time.time()
+        )
+        return self._build_event_from_reply(
+            window_name=window_name,
+            reply_text=reply_text,
+            timestamp=timestamp,
+        )
+
+    def _get_latest_session_user_input(self) -> str:
+        if self._target is None or not self._target.session_path:
+            return ""
+        return read_latest_session_user_input(self._target.session_path) or ""
+
+    def _maybe_print_user_input(self, user_input: str) -> None:
+        normalized = normalize_user_input_for_display(user_input, self._target)
+        if not normalized:
+            return
+        if normalized == self._last_emitted_user_input:
+            return
+        self._last_emitted_user_input = normalized
+        print("")
+        print("[user_input]")
+        print(normalized.rstrip())
+
     def poll(self) -> BroadcastEvent | None:
         window_name = get_terminal_name(self._target)
         current = get_terminal_contents(self._target)
+        terminal_user_input = extract_latest_user_input(current)
+        self._refresh_session_binding(terminal_user_input)
+        latest_user_input = self._get_latest_session_user_input() or terminal_user_input
+        self._maybe_print_user_input(latest_user_input)
+        session_event = self._poll_session_event(window_name)
+        if session_event is not None:
+            if self._verbose and self._target is not None:
+                print(
+                    f"[verbose] session_source=session_file session_id={self._target.session_id!r}",
+                    file=sys.stderr,
+                )
+            return session_event
+        if self._target is not None and self._target.session_path:
+            if self._verbose:
+                print(
+                    f"[verbose] session_bound awaiting_new_turn session_id={self._target.session_id!r}",
+                    file=sys.stderr,
+                )
+            return None
         extracted_reply_text = extract_codex_reply_text(current)
         stripped_reply_text = strip_injected_prompt_text(extracted_reply_text, self._target)
         current_marker_count = count_completion_marker_lines(stripped_reply_text)
         current_reply_text = extract_latest_reply_segment(stripped_reply_text)
+        current_reply_fingerprint = reply_fingerprint(current_reply_text)
         marker_completed = has_trailing_completion_marker(stripped_reply_text)
         completed_reply_is_new = marker_completed and (
-            current_reply_text.strip() != self._last_completed_reply_text.strip()
+            current_reply_fingerprint != self._last_completed_reply_fingerprint
         )
         reply_increment = compute_increment(self._last_reply_text, current_reply_text)
         if len(current_reply_text.splitlines()) >= len(self._last_reply_text.splitlines()):
@@ -453,7 +635,9 @@ class TerminalBroadcastManager:
                 f"buffer_len={len(self._reply_buffer)} "
                 f"reply_lines={len(current_reply_text.splitlines())} "
                 f"extracted_lines={len(extracted_reply_text.splitlines())} "
-                f"stripped_lines={len(stripped_reply_text.splitlines())}",
+                f"stripped_lines={len(stripped_reply_text.splitlines())} "
+                f"user_input={latest_user_input!r} "
+                f"session_id={None if self._target is None else self._target.session_id!r}",
                 file=sys.stderr,
             )
             if extracted_reply_text != stripped_reply_text:
@@ -489,30 +673,15 @@ class TerminalBroadcastManager:
         # Force-reset tracking to current terminal state so the next turn starts
         # fresh, regardless of whether the terminal UI shrank after this turn.
         self._last_reply_text = current_reply_text
-        self._last_completed_reply_text = current_reply_text.strip()
+        self._last_completed_reply_fingerprint = current_reply_fingerprint
 
         reply_text = self._reply_buffer
         self._reply_buffer = ""
-
-        if self._print_speak_text:
-            print("")
-            print("[reply]")
-            print(reply_text.rstrip())
-
-        event = BroadcastEvent(
+        return self._build_event_from_reply(
             window_name=window_name,
-            text=reply_text,
+            reply_text=reply_text,
             timestamp=time.time(),
         )
-
-        if self._speak or self._print_speak_text:
-            threading.Thread(
-                target=self._rewrite_and_speak,
-                args=(reply_text,),
-                daemon=True,
-            ).start()
-
-        return event
 
     def _get_openai_client(self) -> OpenAI:
         with self._openai_client_lock:
@@ -632,9 +801,10 @@ def main() -> int:
     if target is None:
         print(f"[listen] mode=front window={get_front_terminal_name()}")
     else:
+        session_suffix = f" session_id={target.session_id}" if target.session_id else ""
         print(
             f"[listen] mode=bound window_id={target.window_id} tty={target.tty} "
-            f"window={get_terminal_name(target)}"
+            f"window={get_terminal_name(target)}{session_suffix}"
         )
 
     try:
