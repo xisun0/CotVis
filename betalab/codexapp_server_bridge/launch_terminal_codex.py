@@ -133,11 +133,11 @@ def load_terminal_binding(target: TerminalTarget) -> TerminalTarget:
         return target
     loaded = replace(
         target,
-        initial_prompt=payload.get("initial_prompt") or target.initial_prompt,
-        working_directory=payload.get("working_directory") or target.working_directory,
-        launched_at=payload.get("launched_at") or target.launched_at,
-        session_id=payload.get("session_id") or target.session_id,
-        session_path=payload.get("session_path") or target.session_path,
+        initial_prompt=target.initial_prompt or payload.get("initial_prompt"),
+        working_directory=target.working_directory or payload.get("working_directory"),
+        launched_at=target.launched_at or payload.get("launched_at"),
+        session_id=target.session_id or payload.get("session_id"),
+        session_path=target.session_path or payload.get("session_path"),
     )
     if loaded.session_id and not loaded.session_path:
         session_path = find_session_path(loaded.session_id)

@@ -25,6 +25,7 @@ try:
         read_latest_completed_session_turn,
         read_latest_session_user_input,
         resolve_terminal_target_session,
+        find_session_path,
     )
 except ImportError:
     from launch_terminal_codex import (
@@ -37,6 +38,7 @@ except ImportError:
         read_latest_completed_session_turn,
         read_latest_session_user_input,
         resolve_terminal_target_session,
+        find_session_path,
     )
 
 
@@ -128,6 +130,30 @@ def run_osascript(script: str) -> str:
 def get_front_terminal_name() -> str:
     script = 'tell application "Terminal" to get name of front window'
     return run_osascript(script).strip()
+
+
+def get_front_terminal_target() -> TerminalTarget:
+    script = (
+        'tell application "Terminal"\n'
+        "    set targetWindow to front window\n"
+        "    set targetTab to selected tab of targetWindow\n"
+        '    return (id of targetWindow as text) & ":" & (tty of targetTab)\n'
+        "end tell"
+    )
+    raw = run_osascript(script).strip()
+    window_text, tty = raw.split(":", 1)
+    return TerminalTarget(window_id=int(window_text), tty=tty)
+
+
+def build_explicit_session_target(session_id: str) -> TerminalTarget:
+    front_target = get_front_terminal_target()
+    session_path = find_session_path(session_id)
+    return TerminalTarget(
+        window_id=front_target.window_id,
+        tty=front_target.tty,
+        session_id=session_id,
+        session_path=str(session_path) if session_path is not None else None,
+    )
 
 
 def get_terminal_name(target: TerminalTarget | None = None) -> str:
@@ -557,10 +583,12 @@ class TerminalBroadcastManager:
         speak: bool = False,
         print_speak_text: bool = True,
         target: TerminalTarget | None = None,
+        follow_front_window: bool = False,
         speech_rewrite_model: str = "gpt-4o-mini",
         verbose: bool = False,
     ) -> None:
         self._target = load_terminal_binding(target) if target is not None else None
+        self._follow_front_window = follow_front_window
         self._last_reply_text = ""
         self._reply_buffer = ""
         self._last_completed_reply_fingerprint = ""
@@ -574,6 +602,30 @@ class TerminalBroadcastManager:
         self._openai_client_lock = threading.Lock()
         self._last_activity_chime_time = 0.0
         self._verbose = verbose
+
+    def _reset_tracking_for_target_change(self) -> None:
+        self._last_reply_text = ""
+        self._reply_buffer = ""
+        self._last_completed_reply_fingerprint = ""
+        self._last_session_turn_id = ""
+        self._last_emitted_user_input = ""
+
+    def _sync_front_target(self) -> None:
+        if not self._follow_front_window:
+            return
+        front_target = load_terminal_binding(get_front_terminal_target())
+        if self._target is None:
+            self._target = front_target
+            self._reset_tracking_for_target_change()
+            return
+        if (
+            self._target.window_id != front_target.window_id
+            or self._target.tty != front_target.tty
+        ):
+            self._target = front_target
+            self._reset_tracking_for_target_change()
+            return
+        self._target = front_target
 
     def _play_activity_chime(self) -> None:
         now = time.time()
@@ -694,6 +746,7 @@ class TerminalBroadcastManager:
         print(normalized.rstrip())
 
     def poll(self) -> BroadcastEvent | None:
+        self._sync_front_target()
         window_name = get_terminal_name(self._target)
         current = get_terminal_contents(self._target)
         terminal_user_input = extract_latest_user_input(current)
@@ -880,6 +933,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Ignore launch binding and always follow the current front Terminal window.",
     )
     parser.add_argument(
+        "--session-id",
+        default=None,
+        help="Explicit Codex session ID to read backend replies from. Locks to the current front Terminal tab instead of following window switches.",
+    )
+    parser.add_argument(
         "--speech-rewrite-model",
         default="gpt-4o-mini",
         help="Model used to rewrite the completed reply into speech-ready text.",
@@ -896,7 +954,11 @@ def main() -> int:
     args = build_parser().parse_args()
 
     target: TerminalTarget | None = None
-    if args.front_only:
+    follow_front_window = bool(args.front_only)
+    if args.session_id:
+        target = build_explicit_session_target(str(args.session_id).strip())
+        follow_front_window = False
+    elif args.front_only:
         target = None
     elif args.launch_codex:
         launch_dir = str(Path(args.working_directory).resolve()) if args.working_directory else os.getcwd()
@@ -910,6 +972,7 @@ def main() -> int:
         speak=bool(args.speak) and not bool(args.silent_debug),
         print_speak_text=True,
         target=target,
+        follow_front_window=follow_front_window,
         speech_rewrite_model=args.speech_rewrite_model,
         verbose=bool(args.verbose),
     )

@@ -111,6 +111,94 @@ def test_terminal_broadcast_manager_prefers_completed_session_turn(
     assert second is None
 
 
+def test_terminal_broadcast_manager_front_only_resolves_session_and_uses_backend_reply(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    session_path = tmp_path / "session.jsonl"
+    session_path.write_text(
+        "\n".join([
+            '{"timestamp":"2026-04-12T20:00:00.000Z","type":"session_meta","payload":{"id":"sid","cwd":"/tmp/project"}}',
+            '{"timestamp":"2026-04-12T20:00:03.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"turn-1","last_agent_message":"来自 front-only 后台 session 的最终回复","completed_at":1776020003}}',
+            "",
+        ]),
+        encoding="utf-8",
+    )
+    front_target = TerminalTarget(
+        window_id=1,
+        tty="/dev/ttys999",
+        session_id="sid",
+        session_path=str(session_path),
+    )
+
+    monkeypatch.setattr(tbm, "get_front_terminal_target", lambda: front_target)
+    monkeypatch.setattr(tbm, "load_terminal_binding", lambda target: target)
+    monkeypatch.setattr(tbm, "get_terminal_name", lambda _target: "Front Terminal")
+    monkeypatch.setattr(tbm, "get_terminal_contents", lambda _target: _snapshot("› 问题"))
+
+    manager = tbm.TerminalBroadcastManager(
+        speak=False,
+        print_speak_text=False,
+        target=None,
+        follow_front_window=True,
+        verbose=False,
+    )
+
+    event = manager.poll()
+
+    assert event is not None
+    assert event.text == "来自 front-only 后台 session 的最终回复"
+
+
+def test_build_explicit_session_target_uses_front_tab_and_session_path(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    session_path = tmp_path / "session.jsonl"
+    session_path.write_text("", encoding="utf-8")
+    monkeypatch.setattr(
+        tbm,
+        "get_front_terminal_target",
+        lambda: TerminalTarget(window_id=7, tty="/dev/ttys777"),
+    )
+    monkeypatch.setattr(tbm, "find_session_path", lambda session_id: session_path)
+
+    target = tbm.build_explicit_session_target("sid")
+
+    assert target.window_id == 7
+    assert target.tty == "/dev/ttys777"
+    assert target.session_id == "sid"
+    assert target.session_path == str(session_path)
+
+
+def test_load_terminal_binding_keeps_explicit_session_over_stale_binding(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    binding_dir = tmp_path / "bindings"
+    monkeypatch.setattr(ltc, "TERMINAL_BINDINGS_DIR", binding_dir)
+
+    stale_target = TerminalTarget(
+        window_id=7,
+        tty="/dev/ttys777",
+        session_id="old-session",
+        session_path="/tmp/old-session.jsonl",
+    )
+    ltc.save_terminal_binding(stale_target)
+
+    explicit_target = TerminalTarget(
+        window_id=7,
+        tty="/dev/ttys777",
+        session_id="new-session",
+        session_path="/tmp/new-session.jsonl",
+    )
+
+    loaded = ltc.load_terminal_binding(explicit_target)
+
+    assert loaded.session_id == "new-session"
+    assert loaded.session_path == "/tmp/new-session.jsonl"
+
+
 def test_read_latest_session_user_input_prefers_session_records(tmp_path) -> None:
     session_path = tmp_path / "session.jsonl"
     session_path.write_text(
@@ -262,6 +350,35 @@ def test_rewrite_for_speech_with_model_returns_exact_first_paragraph_for_reading
     assert spoken == (
         "2022年，在一次管理层会议上，核桃编程 COO 齐峰走进会议室，手中拿着一份刚出炉的定价实验报告。过去一个多月，公司围绕主打课程的定价进行了多轮实验，尝试评估将售价从2699元上调至2899元的可行性。实验结果显示，售价上调200元后，相关量化指标并未出现显著下滑：涨价似乎并未拖累销售转化率。若这一趋势能够持续，提价无疑将提升公司的收入水平。然而，这些结果是否足以支撑一次正式调价，仍需管理层讨论决定。"
     )
+
+
+def test_main_session_id_disables_front_only_follow(monkeypatch) -> None:
+    captured = {}
+    target = TerminalTarget(
+        window_id=9,
+        tty="/dev/ttys009",
+        session_id="sid",
+        session_path="/tmp/session.jsonl",
+    )
+
+    monkeypatch.setattr(sys, "argv", ["codex-speak", "--session-id", "sid", "--front-only"])
+    monkeypatch.setattr(tbm, "build_explicit_session_target", lambda session_id: target)
+    monkeypatch.setattr(tbm, "get_terminal_name", lambda _target: "Pinned Terminal")
+
+    class FakeManager:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+        def poll(self):
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(tbm, "TerminalBroadcastManager", FakeManager)
+
+    exit_code = tbm.main()
+
+    assert exit_code == 0
+    assert captured["target"] == target
+    assert captured["follow_front_window"] is False
 
 
 # Date noted: 2026-04-12

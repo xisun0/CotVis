@@ -84,11 +84,32 @@ If you want to follow the current front terminal instead of launching a new one:
 codex-speak --front-only --no-launch-codex --silent-debug
 ```
 
+If you want to follow an existing Codex session more reliably, bind to its
+backend session ID directly:
+
+```bash
+codex-speak --no-launch-codex --session-id <session-id>
+```
+
 If you want to launch Codex in a specific directory:
 
 ```bash
 codex-speak --working-directory /path/to/project
 ```
+
+## Existing Sessions
+
+There are two ways to follow an existing Codex conversation:
+
+- `--front-only`: follow the current front `Terminal.app` window or tab
+- `--session-id`: pin `codex-speak` to a specific backend Codex session
+
+Use `--session-id` when you want stable tracking for an existing conversation.
+This avoids relying on front-window switching or on matching the visible
+terminal contents back to the correct backend session.
+
+If you pass both flags, `--session-id` takes precedence and disables dynamic
+front-window following.
 
 ## Approximate Cost
 
