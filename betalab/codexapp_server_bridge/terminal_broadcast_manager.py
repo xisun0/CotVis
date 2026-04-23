@@ -20,6 +20,7 @@ try:
         TERMINAL_OUTPUT_PROTOCOL,
         SessionTurn,
         TerminalTarget,
+        find_terminal_target_for_session,
         load_terminal_binding,
         launch_terminal_codex,
         read_latest_completed_session_turn,
@@ -33,6 +34,7 @@ except ImportError:
         TERMINAL_OUTPUT_PROTOCOL,
         SessionTurn,
         TerminalTarget,
+        find_terminal_target_for_session,
         load_terminal_binding,
         launch_terminal_codex,
         read_latest_completed_session_turn,
@@ -146,6 +148,10 @@ def get_front_terminal_target() -> TerminalTarget:
 
 
 def build_explicit_session_target(session_id: str) -> TerminalTarget:
+    bound_target = find_terminal_target_for_session(session_id)
+    if bound_target is not None:
+        return bound_target
+
     front_target = get_front_terminal_target()
     session_path = find_session_path(session_id)
     return TerminalTarget(
@@ -153,6 +159,10 @@ def build_explicit_session_target(session_id: str) -> TerminalTarget:
         tty=front_target.tty,
         session_id=session_id,
         session_path=str(session_path) if session_path is not None else None,
+        note=(
+            "[warning] session-id target tab was not found in saved bindings; "
+            "falling back to the current front Terminal tab."
+        ),
     )
 
 
@@ -393,6 +403,8 @@ def extract_latest_user_input(text: str) -> str:
         candidate = line.removeprefix("›").strip()
         if not candidate:
             continue
+        if any(pattern.search(candidate) for pattern in AUTHORIZATION_OPTION_LINE_PATTERNS):
+            continue
         latest = candidate
     return latest
 
@@ -572,8 +584,135 @@ class BroadcastEvent:
     timestamp: float
 
 
-ACTIVITY_SOUND = "/System/Library/Sounds/Pop.aiff"
+ACTIVITY_SOUND = "/System/Library/Sounds/Glass.aiff"
 ACTIVITY_INDICATOR_INTERVAL = 1.0  # seconds between activity chimes
+AUTHORIZATION_REMINDER_INTERVAL = 12.0
+
+AUTHORIZATION_HEADLINE_PATTERNS = [
+    re.compile(r"do you want to allow this action\??", re.IGNORECASE),
+    re.compile(r"would you like to run the following(?:\s+command)?\??", re.IGNORECASE),
+    re.compile(r"(approval|authorization) required", re.IGNORECASE),
+    re.compile(r"waiting for approval", re.IGNORECASE),
+    re.compile(r"requires approval", re.IGNORECASE),
+    re.compile(r"^(需要授权|等待授权|需要批准|等待批准)"),
+]
+
+AUTHORIZATION_ACTION_PATTERNS = [
+    re.compile(r"\ballow once\b", re.IGNORECASE),
+    re.compile(r"\ballow always\b", re.IGNORECASE),
+    re.compile(r"\bdeny\b", re.IGNORECASE),
+    re.compile(r"\bapprove\b", re.IGNORECASE),
+    re.compile(r"\breject\b", re.IGNORECASE),
+    re.compile(r"\byes, proceed\b", re.IGNORECASE),
+    re.compile(r"\bdon't ask again\b", re.IGNORECASE),
+    re.compile(r"\bno, and tell codex what to do differently\b", re.IGNORECASE),
+    re.compile(r"(本次允许|始终允许|允许一次|总是允许|拒绝|批准)"),
+]
+
+AUTHORIZATION_REASON_PATTERNS = [
+    re.compile(r"^reason:", re.IGNORECASE),
+    re.compile(r"^(原因|理由)[:：]"),
+]
+
+AUTHORIZATION_COMMAND_PATTERNS = [
+    re.compile(r"^\$\s+\S+"),
+]
+
+AUTHORIZATION_OPTION_LINE_PATTERNS = [
+    re.compile(r"^\d+\.\s+yes,\s+proceed\b", re.IGNORECASE),
+    re.compile(r"^\d+\.\s+yes,\s+and\s+don't\s+ask\s+again\b", re.IGNORECASE),
+    re.compile(
+        r"^\d+\.\s+no,\s+and\s+tell\s+codex\s+what\s+to\s+do\s+differently\b",
+        re.IGNORECASE,
+    ),
+]
+
+
+def _normalize_terminal_line_for_alert(raw_line: str) -> str:
+    line = raw_line.strip()
+    if not line:
+        return ""
+    for prefix in ("│", "•", "◦", "›"):
+        if line.startswith(prefix):
+            line = line.removeprefix(prefix).strip()
+    return line.rstrip("│").strip()
+
+
+def detect_authorization_prompt(text: str) -> str:
+    lines = [_normalize_terminal_line_for_alert(line) for line in text.splitlines()]
+    cleaned_lines = [line for line in lines if line]
+    has_reason = any(
+        pattern.search(line)
+        for line in cleaned_lines
+        for pattern in AUTHORIZATION_REASON_PATTERNS
+    )
+    has_command = any(
+        pattern.search(line)
+        for line in cleaned_lines
+        for pattern in AUTHORIZATION_COMMAND_PATTERNS
+    )
+    matched_actions = [
+        line
+        for line in cleaned_lines
+        if any(pattern.search(line) for pattern in AUTHORIZATION_ACTION_PATTERNS)
+    ]
+    for index, line in enumerate(cleaned_lines):
+        headline_candidates = [line]
+        if index + 1 < len(cleaned_lines):
+            headline_candidates.append(f"{line} {cleaned_lines[index + 1]}".strip())
+        if index + 2 < len(cleaned_lines):
+            headline_candidates.append(
+                f"{line} {cleaned_lines[index + 1]} {cleaned_lines[index + 2]}".strip()
+            )
+        matched_pattern = next(
+            (
+                pattern
+                for pattern in AUTHORIZATION_HEADLINE_PATTERNS
+                if any(pattern.search(candidate) for candidate in headline_candidates)
+            ),
+            None,
+        )
+        if matched_pattern is None:
+            continue
+        window = cleaned_lines[max(0, index - 1) : index + 5]
+        if any(
+            pattern.search(candidate)
+            for candidate in window
+            for pattern in AUTHORIZATION_ACTION_PATTERNS
+        ):
+            for headline_candidate in reversed(headline_candidates):
+                matched_text = matched_pattern.search(headline_candidate)
+                if matched_text is not None:
+                    return matched_text.group(0).strip()
+        for headline_candidate in reversed(headline_candidates):
+            matched_text = matched_pattern.search(headline_candidate)
+            if matched_text is not None:
+                return matched_text.group(0).strip()
+    if len(matched_actions) >= 2 and (has_reason or has_command):
+        if has_command:
+            return "Would you like to run the following command?"
+        return "Authorization request pending."
+    return ""
+
+
+def build_authorization_alert_message(prompt_text: str) -> str:
+    cleaned = prompt_text.strip()
+    if not cleaned:
+        return "Authorization request pending in Terminal."
+    if contains_cjk(cleaned):
+        return f"有授权请求，终端正在等待你确认。{cleaned}"
+    return f"Authorization request pending in Terminal. {cleaned}"
+
+
+def speak_status_text(text: str) -> None:
+    cleaned = " ".join(segment.strip() for segment in text.splitlines() if segment.strip())
+    if not cleaned:
+        return
+    subprocess.Popen(
+        ["say", cleaned],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
 
 
 class TerminalBroadcastManager:
@@ -601,7 +740,18 @@ class TerminalBroadcastManager:
         self._openai_client: OpenAI | None = None
         self._openai_client_lock = threading.Lock()
         self._last_activity_chime_time = 0.0
+        self._last_authorization_prompt = ""
+        self._last_authorization_alert_time = 0.0
         self._verbose = verbose
+
+    def _verbose_target_label(self, target: TerminalTarget | None = None) -> str:
+        current = target if target is not None else self._target
+        if current is None:
+            return "window_id=? tty=? session_id=None"
+        return (
+            f"window_id={current.window_id} tty={current.tty} "
+            f"session_id={current.session_id!r}"
+        )
 
     def _reset_tracking_for_target_change(self) -> None:
         self._last_reply_text = ""
@@ -671,6 +821,99 @@ class TerminalBroadcastManager:
             timeout_seconds=0.0,
         )
 
+    def _emit_authorization_alert(self, prompt_text: str, *, source_label: str | None = None) -> None:
+        now = time.time()
+        prompt_fp = spoken_reply_fingerprint(prompt_text)
+        should_alert = (
+            prompt_fp != self._last_authorization_prompt
+            or now - self._last_authorization_alert_time >= AUTHORIZATION_REMINDER_INTERVAL
+        )
+        if not should_alert:
+            return
+
+        self._last_authorization_prompt = prompt_fp
+        self._last_authorization_alert_time = now
+
+        print("")
+        print("[authorization]")
+        if source_label:
+            print(f"[note] authorization source={source_label}")
+        print(prompt_text)
+
+        self._play_activity_chime()
+        if self._speak:
+            threading.Thread(
+                target=speak_status_text,
+                args=(build_authorization_alert_message(prompt_text),),
+                daemon=True,
+            ).start()
+
+    def _maybe_alert_authorization_request(self, current_text: str) -> None:
+        prompt_text = detect_authorization_prompt(current_text)
+        if self._verbose:
+            normalized_lines = [
+                _normalize_terminal_line_for_alert(line)
+                for line in current_text.splitlines()
+            ]
+            normalized_lines = [line for line in normalized_lines if line]
+            has_reason = any(
+                pattern.search(line)
+                for line in normalized_lines
+                for pattern in AUTHORIZATION_REASON_PATTERNS
+            )
+            has_command = any(
+                pattern.search(line)
+                for line in normalized_lines
+                for pattern in AUTHORIZATION_COMMAND_PATTERNS
+            )
+            action_count = sum(
+                1
+                for line in normalized_lines
+                if any(pattern.search(line) for pattern in AUTHORIZATION_ACTION_PATTERNS)
+            )
+            print(
+                f"[verbose] {self._verbose_target_label()} authorization_detected={bool(prompt_text)} "
+                f"has_reason={has_reason} has_command={has_command} action_count={action_count} "
+                f"prompt={prompt_text!r}",
+                file=sys.stderr,
+            )
+        if not prompt_text:
+            front_prompt_text = ""
+            if self._target is not None and self._target.session_id and self._target.session_path:
+                try:
+                    front_target = load_terminal_binding(get_front_terminal_target())
+                    if (
+                        front_target.window_id != self._target.window_id
+                        or front_target.tty != self._target.tty
+                    ):
+                        front_text = get_terminal_contents(front_target)
+                        front_prompt_text = detect_authorization_prompt(front_text)
+                        if self._verbose:
+                            print(
+                                f"[verbose] {self._verbose_target_label(front_target)} "
+                                f"authorization_front_fallback={bool(front_prompt_text)} "
+                                f"front_prompt={front_prompt_text!r}",
+                                file=sys.stderr,
+                            )
+                except subprocess.CalledProcessError:
+                    if self._verbose:
+                        print(
+                            f"[verbose] {self._verbose_target_label()} "
+                            "authorization_front_fallback unavailable",
+                            file=sys.stderr,
+                        )
+            if front_prompt_text:
+                self._emit_authorization_alert(
+                    front_prompt_text,
+                    source_label="front_tab_fallback",
+                )
+                return
+            self._last_authorization_prompt = ""
+            self._last_authorization_alert_time = 0.0
+            return
+
+        self._emit_authorization_alert(prompt_text)
+
     def _build_event_from_reply(
         self,
         *,
@@ -681,7 +924,10 @@ class TerminalBroadcastManager:
     ) -> BroadcastEvent | None:
         if replies_are_effectively_same(reply_text, self._last_emitted_reply_text):
             if self._verbose:
-                print("[verbose] suppress_replay same_as_last_emitted=True", file=sys.stderr)
+                print(
+                    f"[verbose] {self._verbose_target_label()} suppress_replay same_as_last_emitted=True",
+                    file=sys.stderr,
+                )
             return None
         self._last_emitted_reply_text = reply_text
 
@@ -749,6 +995,7 @@ class TerminalBroadcastManager:
         self._sync_front_target()
         window_name = get_terminal_name(self._target)
         current = get_terminal_contents(self._target)
+        self._maybe_alert_authorization_request(current)
         terminal_user_input = extract_latest_user_input(current)
         self._refresh_session_binding(terminal_user_input)
         latest_user_input = self._get_latest_session_user_input() or terminal_user_input
@@ -757,14 +1004,14 @@ class TerminalBroadcastManager:
         if session_event is not None:
             if self._verbose and self._target is not None:
                 print(
-                    f"[verbose] session_source=session_file session_id={self._target.session_id!r}",
+                    f"[verbose] {self._verbose_target_label()} session_source=session_file",
                     file=sys.stderr,
                 )
             return session_event
         if self._target is not None and self._target.session_path:
             if self._verbose:
                 print(
-                    f"[verbose] session_bound awaiting_new_turn session_id={self._target.session_id!r}",
+                    f"[verbose] {self._verbose_target_label()} session_bound awaiting_new_turn",
                     file=sys.stderr,
                 )
             return None
@@ -786,7 +1033,8 @@ class TerminalBroadcastManager:
             extracted_has_marker = OUTPUT_COMPLETE_MARKER in extracted_reply_text
             stripped_has_marker = OUTPUT_COMPLETE_MARKER in stripped_reply_text
             print(
-                f"[verbose] marker_now={current_marker_count} completed={marker_completed} completed_is_new={completed_reply_is_new} "
+                f"[verbose] {self._verbose_target_label()} "
+                f"marker_now={current_marker_count} completed={marker_completed} completed_is_new={completed_reply_is_new} "
                 f"raw_has_marker={raw_has_marker} "
                 f"extracted_has_marker={extracted_has_marker} "
                 f"stripped_has_marker={stripped_has_marker} "
@@ -795,19 +1043,22 @@ class TerminalBroadcastManager:
                 f"reply_lines={len(current_reply_text.splitlines())} "
                 f"extracted_lines={len(extracted_reply_text.splitlines())} "
                 f"stripped_lines={len(stripped_reply_text.splitlines())} "
-                f"user_input={latest_user_input!r} "
-                f"session_id={None if self._target is None else self._target.session_id!r}",
+                f"user_input={latest_user_input!r}",
                 file=sys.stderr,
             )
             if extracted_reply_text != stripped_reply_text:
                 print(
-                    f"[verbose] strip_delta extracted_len={len(extracted_reply_text.strip())} "
+                    f"[verbose] {self._verbose_target_label()} "
+                    f"strip_delta extracted_len={len(extracted_reply_text.strip())} "
                     f"stripped_len={len(stripped_reply_text.strip())}",
                     file=sys.stderr,
                 )
             if reply_increment.strip():
                 preview = reply_increment.strip()[:80].replace("\n", "↵")
-                print(f"[verbose] increment preview: {preview!r}", file=sys.stderr)
+                print(
+                    f"[verbose] {self._verbose_target_label()} increment preview: {preview!r}",
+                    file=sys.stderr,
+                )
 
         if reply_increment.strip():
             if self._reply_buffer:
@@ -978,8 +1229,14 @@ def main() -> int:
     )
     started_at = time.time()
     if target is None:
-        print(f"[listen] mode=front window={get_front_terminal_name()}")
+        front_target = get_front_terminal_target()
+        print(
+            f"[listen] mode=front window_id={front_target.window_id} tty={front_target.tty} "
+            f"window={get_front_terminal_name()}"
+        )
     else:
+        if target.note:
+            print(target.note)
         session_suffix = f" session_id={target.session_id}" if target.session_id else ""
         print(
             f"[listen] mode=bound window_id={target.window_id} tty={target.tty} "

@@ -46,6 +46,7 @@ class TerminalTarget:
     launched_at: float | None = None
     session_id: str | None = None
     session_path: str | None = None
+    note: str | None = None
 
 
 @dataclass(frozen=True)
@@ -116,6 +117,7 @@ def save_terminal_binding(target: TerminalTarget) -> None:
         "launched_at": target.launched_at,
         "session_id": target.session_id,
         "session_path": target.session_path,
+        "note": target.note,
     }
     get_terminal_binding_path(target).write_text(
         json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
@@ -138,6 +140,7 @@ def load_terminal_binding(target: TerminalTarget) -> TerminalTarget:
         launched_at=target.launched_at or payload.get("launched_at"),
         session_id=target.session_id or payload.get("session_id"),
         session_path=target.session_path or payload.get("session_path"),
+        note=target.note or payload.get("note"),
     )
     if loaded.session_id and not loaded.session_path:
         session_path = find_session_path(loaded.session_id)
@@ -152,6 +155,45 @@ def find_session_path(session_id: str) -> Path | None:
     if not matches:
         return None
     return matches[-1]
+
+
+def find_terminal_target_for_session(session_id: str) -> TerminalTarget | None:
+    if not TERMINAL_BINDINGS_DIR.exists():
+        return None
+    candidates: list[TerminalTarget] = []
+    for path in TERMINAL_BINDINGS_DIR.glob("*.json"):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if payload.get("session_id") != session_id:
+            continue
+        window_id = payload.get("window_id")
+        tty = payload.get("tty")
+        if not isinstance(window_id, int) or not isinstance(tty, str) or not tty:
+            continue
+        candidates.append(
+            TerminalTarget(
+                window_id=window_id,
+                tty=tty,
+                initial_prompt=payload.get("initial_prompt"),
+                working_directory=payload.get("working_directory"),
+                launched_at=payload.get("launched_at"),
+                session_id=session_id,
+                session_path=payload.get("session_path"),
+                note=payload.get("note"),
+            )
+        )
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: float(item.launched_at or 0.0), reverse=True)
+    target = candidates[0]
+    if target.session_path:
+        return target
+    session_path = find_session_path(session_id)
+    if session_path is None:
+        return target
+    return replace(target, session_path=str(session_path))
 
 
 def _read_session_cwd(session_path: Path) -> str | None:

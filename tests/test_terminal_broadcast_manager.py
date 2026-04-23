@@ -171,6 +171,120 @@ def test_build_explicit_session_target_uses_front_tab_and_session_path(
     assert target.session_path == str(session_path)
 
 
+def test_find_terminal_target_for_session_uses_saved_binding(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    binding_dir = tmp_path / "bindings"
+    sessions_dir = tmp_path / "sessions"
+    session_id = "sid"
+    session_path = sessions_dir / "2026" / "04" / "23" / f"rollout-{session_id}.jsonl"
+    session_path.parent.mkdir(parents=True, exist_ok=True)
+    session_path.write_text("", encoding="utf-8")
+    monkeypatch.setattr(ltc, "TERMINAL_BINDINGS_DIR", binding_dir)
+    monkeypatch.setattr(ltc, "CODEX_SESSIONS_DIR", sessions_dir)
+
+    ltc.save_terminal_binding(
+        TerminalTarget(
+            window_id=9,
+            tty="/dev/ttys009",
+            launched_at=100.0,
+            session_id=session_id,
+            session_path=str(session_path),
+        )
+    )
+    ltc.save_terminal_binding(
+        TerminalTarget(
+            window_id=5,
+            tty="/dev/ttys005",
+            launched_at=50.0,
+            session_id=session_id,
+            session_path=str(session_path),
+        )
+    )
+
+    target = ltc.find_terminal_target_for_session(session_id)
+
+    assert target is not None
+    assert target.window_id == 9
+    assert target.tty == "/dev/ttys009"
+    assert target.session_id == session_id
+    assert target.session_path == str(session_path)
+
+
+def test_main_session_id_prints_warning_when_binding_not_found(monkeypatch, capsys) -> None:
+    target = TerminalTarget(
+        window_id=9,
+        tty="/dev/ttys009",
+        session_id="sid",
+        session_path="/tmp/session.jsonl",
+        note="[warning] session-id target tab was not found in saved bindings; falling back to the current front Terminal tab.",
+    )
+
+    monkeypatch.setattr(sys, "argv", ["codex-speak", "--session-id", "sid"])
+    monkeypatch.setattr(tbm, "build_explicit_session_target", lambda session_id: target)
+    monkeypatch.setattr(tbm, "get_terminal_name", lambda _target: "Pinned Terminal")
+
+    class FakeManager:
+        def __init__(self, **kwargs):
+            pass
+
+        def poll(self):
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(tbm, "TerminalBroadcastManager", FakeManager)
+
+    exit_code = tbm.main()
+    out = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "[warning] session-id target tab was not found in saved bindings" in out
+
+
+def test_main_front_mode_prints_window_id_and_tty(monkeypatch, capsys) -> None:
+    front_target = TerminalTarget(window_id=12, tty="/dev/ttys012")
+
+    monkeypatch.setattr(sys, "argv", ["codex-speak", "--no-launch-codex", "--front-only"])
+    monkeypatch.setattr(tbm, "get_front_terminal_target", lambda: front_target)
+    monkeypatch.setattr(tbm, "get_front_terminal_name", lambda: "Front Terminal")
+
+    class FakeManager:
+        def __init__(self, **kwargs):
+            pass
+
+        def poll(self):
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(tbm, "TerminalBroadcastManager", FakeManager)
+
+    exit_code = tbm.main()
+    out = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "[listen] mode=front window_id=12 tty=/dev/ttys012 window=Front Terminal" in out
+
+
+def test_terminal_broadcast_manager_verbose_lines_include_window_id_and_tty(
+    monkeypatch,
+    capsys,
+) -> None:
+    target = TerminalTarget(window_id=7, tty="/dev/ttys777", initial_prompt="question")
+    monkeypatch.setattr(tbm, "get_terminal_name", lambda _target: "Test Terminal")
+    monkeypatch.setattr(tbm, "get_terminal_contents", lambda _target: _snapshot("› question"))
+
+    manager = tbm.TerminalBroadcastManager(
+        speak=False,
+        print_speak_text=False,
+        target=target,
+        verbose=True,
+    )
+
+    manager.poll()
+    err = capsys.readouterr().err
+
+    assert "window_id=7 tty=/dev/ttys777" in err
+
+
 def test_load_terminal_binding_keeps_explicit_session_over_stale_binding(
     tmp_path,
     monkeypatch,
@@ -698,3 +812,241 @@ def test_terminal_broadcast_manager_ignores_old_completed_reply_after_new_user_i
     assert third is None
     assert fourth is not None
     assert fourth.text.strip() == "new reply first line\nnew reply second line"
+
+
+def test_detect_authorization_prompt_from_terminal_ui() -> None:
+    prompt = tbm.detect_authorization_prompt(
+        _snapshot(
+            "│ Do you want to allow this action?",
+            "│ Allow once",
+            "│ Allow always",
+            "│ Deny",
+        )
+    )
+
+    assert prompt == "Do you want to allow this action?"
+
+
+def test_detect_authorization_prompt_from_codex_run_command_ui() -> None:
+    prompt = tbm.detect_authorization_prompt(
+        _snapshot(
+            "Would you like to run the following command?",
+            "Reason: Do you want me to retry the GPT Image 2 polish pass with external network access?",
+            "$ python3 /Users/sxi/.codex/skills/spotpaper/scripts/image2_edit.py -i input.png -o output.png",
+            "› 1. Yes, proceed (y)",
+            "2. Yes, and don't ask again for commands that start with `python3 /Users/sxi/.codex/skills/spotpaper/scripts/image2_edit.py` (p)",
+            "3. No, and tell Codex what to do differently (esc)",
+        )
+    )
+
+    assert prompt == "Would you like to run the following command?"
+
+
+def test_detect_authorization_prompt_from_wrapped_codex_run_command_ui() -> None:
+    prompt = tbm.detect_authorization_prompt(
+        _snapshot(
+            "Would you like to run the following",
+            "command?",
+            "Reason: Do you want me to retry the GPT Image 2 polish pass with external network access?",
+            "› 1. Yes, proceed (y)",
+            "2. Yes, and don't ask again for commands that start with `python3 /Users/sxi/.codex/skills/spotpaper/scripts/image2_edit.py` (p)",
+            "3. No, and tell Codex what to do differently (esc)",
+        )
+    )
+
+    assert prompt == "Would you like to run the following command?"
+
+
+def test_detect_authorization_prompt_from_headline_only_prefix() -> None:
+    prompt = tbm.detect_authorization_prompt(
+        _snapshot(
+            "Would you like to run the following",
+            "Reason: Do you want me to retry the GPT Image 2 polish pass with external network access?",
+        )
+    )
+
+    assert prompt == "Would you like to run the following"
+
+
+def test_detect_authorization_prompt_from_partial_codex_run_command_ui() -> None:
+    prompt = tbm.detect_authorization_prompt(
+        _snapshot(
+            "Reason: Do you want me to run the GPT Image 2 polish pass on the current reviewed figure using external network access?",
+            "$ python3 /Users/sxi/.codex/skills/spotpaper/scripts/image2_edit.py -i input.png -o output.png",
+            "› 1. Yes, proceed (y)",
+            "2. Yes, and don't ask again for commands that start with `python3 /Users/sxi/.codex/skills/spotpaper/scripts/image2_edit.py` (p)",
+            "3. No, and tell Codex what to do differently (esc)",
+        )
+    )
+
+    assert prompt == "Would you like to run the following command?"
+
+
+def test_detect_authorization_prompt_does_not_trigger_on_normal_reply_text() -> None:
+    prompt = tbm.detect_authorization_prompt(
+        _snapshot(
+            "现在还能删的，主要就剩两类。",
+            "如果你要，我可以先删第 1 类；按你的要求，删之前我会再向你请求授权。",
+        )
+    )
+
+    assert prompt == ""
+
+
+def test_terminal_broadcast_manager_prints_authorization_alert_once_per_prompt(
+    monkeypatch,
+    capsys,
+) -> None:
+    target = TerminalTarget(window_id=1, tty="/dev/ttys999", initial_prompt="question")
+    snapshots = [
+        _snapshot(
+            "│ Do you want to allow this action?",
+            "│ Allow once",
+            "│ Allow always",
+            "│ Deny",
+        ),
+        _snapshot(
+            "│ Do you want to allow this action?",
+            "│ Allow once",
+            "│ Allow always",
+            "│ Deny",
+        ),
+    ]
+    snapshots_iter = iter(snapshots)
+    last_snapshot = snapshots[-1]
+
+    def fake_terminal_contents(_target):
+        nonlocal last_snapshot
+        try:
+            last_snapshot = next(snapshots_iter)
+        except StopIteration:
+            pass
+        return last_snapshot
+
+    monkeypatch.setattr(tbm, "get_terminal_name", lambda _target: "Test Terminal")
+    monkeypatch.setattr(tbm, "get_terminal_contents", fake_terminal_contents)
+
+    manager = tbm.TerminalBroadcastManager(
+        speak=False,
+        print_speak_text=False,
+        target=target,
+        verbose=False,
+    )
+
+    manager.poll()
+    manager.poll()
+    out = capsys.readouterr().out
+
+    assert out.count("[authorization]") == 1
+    assert "Do you want to allow this action?" in out
+
+
+def test_terminal_broadcast_manager_prints_authorization_alert_when_session_bound(
+    tmp_path,
+    monkeypatch,
+    capsys,
+) -> None:
+    session_path = tmp_path / "session.jsonl"
+    session_path.write_text(
+        "\n".join([
+            '{"timestamp":"2026-04-12T20:00:00.000Z","type":"session_meta","payload":{"id":"sid","cwd":"/tmp/project"}}',
+            "",
+        ]),
+        encoding="utf-8",
+    )
+    target = TerminalTarget(
+        window_id=1,
+        tty="/dev/ttys999",
+        initial_prompt="question",
+        working_directory="/tmp/project",
+        launched_at=1776020000.0,
+        session_id="sid",
+        session_path=str(session_path),
+    )
+
+    monkeypatch.setattr(tbm, "get_terminal_name", lambda _target: "Test Terminal")
+    monkeypatch.setattr(
+        tbm,
+        "get_terminal_contents",
+        lambda _target: _snapshot(
+            "Would you like to run the following",
+            "command?",
+            "Reason: Do you want me to run the GPT Image 2 polish pass with external network access?",
+            "› 1. Yes, proceed (y)",
+            "2. Yes, and don't ask again for commands that start with `python3 /Users/sxi/.codex/skills/spotpaper/scripts/image2_edit.py` (p)",
+            "3. No, and tell Codex what to do differently (esc)",
+        ),
+    )
+
+    manager = tbm.TerminalBroadcastManager(
+        speak=False,
+        print_speak_text=False,
+        target=target,
+        verbose=False,
+    )
+
+    event = manager.poll()
+    out = capsys.readouterr().out
+
+    assert event is None
+    assert "[authorization]" in out
+    assert "Would you like to run the following command?" in out
+    assert "[user_input]" not in out
+
+
+def test_terminal_broadcast_manager_uses_front_tab_authorization_fallback_when_bound_tab_misses(
+    tmp_path,
+    monkeypatch,
+    capsys,
+) -> None:
+    session_path = tmp_path / "session.jsonl"
+    session_path.write_text(
+        "\n".join([
+            '{"timestamp":"2026-04-12T20:00:00.000Z","type":"session_meta","payload":{"id":"sid","cwd":"/tmp/project"}}',
+            "",
+        ]),
+        encoding="utf-8",
+    )
+    bound_target = TerminalTarget(
+        window_id=1,
+        tty="/dev/ttys999",
+        initial_prompt="question",
+        working_directory="/tmp/project",
+        launched_at=1776020000.0,
+        session_id="sid",
+        session_path=str(session_path),
+    )
+    front_target = TerminalTarget(window_id=2, tty="/dev/ttys222")
+
+    monkeypatch.setattr(tbm, "get_terminal_name", lambda _target: "Test Terminal")
+    monkeypatch.setattr(tbm, "get_front_terminal_target", lambda: front_target)
+    monkeypatch.setattr(tbm, "load_terminal_binding", lambda target: target)
+
+    def fake_terminal_contents(target):
+        if target.window_id == 1:
+            return _snapshot("no approval ui here")
+        return _snapshot(
+            "Would you like to run the following command?",
+            "Reason: Do you want me to stage the 4 updated spotpaper files in the writing submodule?",
+            "$ git -C writing/StateCap_policy_dynamics add spotpaper_draft/PAPER_TAKEAWAYS.md",
+            "› 1. Yes, proceed (y)",
+            "2. Yes, and don't ask again for commands that start with `git -C writing/StateCap_policy_dynamics add` (p)",
+            "3. No, and tell Codex what to do differently (esc)",
+        )
+
+    monkeypatch.setattr(tbm, "get_terminal_contents", fake_terminal_contents)
+
+    manager = tbm.TerminalBroadcastManager(
+        speak=False,
+        print_speak_text=False,
+        target=bound_target,
+        verbose=False,
+    )
+
+    event = manager.poll()
+    out = capsys.readouterr().out
+
+    assert event is None
+    assert "[authorization]" in out
+    assert "[note] authorization source=front_tab_fallback" in out
+    assert "Would you like to run the following command?" in out
