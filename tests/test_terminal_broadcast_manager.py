@@ -21,6 +21,22 @@ def _snapshot(*lines: str) -> str:
     return "\n".join(lines)
 
 
+def _disable_front_tab_authorization_fallback(
+    monkeypatch,
+    *,
+    front_target: TerminalTarget | None = None,
+) -> None:
+    monkeypatch.setattr(
+        tbm,
+        "get_front_terminal_target",
+        lambda: front_target or TerminalTarget(window_id=1, tty="/dev/ttys999"),
+    )
+
+
+def _disable_activity_chime(monkeypatch) -> None:
+    monkeypatch.setattr(tbm.TerminalBroadcastManager, "_play_activity_chime", lambda self: None)
+
+
 def test_resolve_terminal_target_session_from_history(tmp_path, monkeypatch) -> None:
     history_path = tmp_path / "history.jsonl"
     sessions_dir = tmp_path / "sessions"
@@ -95,6 +111,7 @@ def test_terminal_broadcast_manager_prefers_completed_session_turn(
 
     monkeypatch.setattr(tbm, "get_terminal_name", lambda _target: "Test Terminal")
     monkeypatch.setattr(tbm, "get_terminal_contents", lambda _target: _snapshot("› 问题"))
+    _disable_front_tab_authorization_fallback(monkeypatch, front_target=target)
 
     manager = tbm.TerminalBroadcastManager(
         speak=False,
@@ -360,6 +377,7 @@ def test_terminal_broadcast_manager_prints_user_input_from_session(
 
     monkeypatch.setattr(tbm, "get_terminal_name", lambda _target: "Test Terminal")
     monkeypatch.setattr(tbm, "get_terminal_contents", lambda _target: _snapshot("› ignored"))
+    _disable_front_tab_authorization_fallback(monkeypatch, front_target=target)
 
     manager = tbm.TerminalBroadcastManager(
         speak=False,
@@ -629,6 +647,7 @@ def test_terminal_broadcast_manager_detects_five_turns_with_lingering_old_marker
 
     monkeypatch.setattr(tbm, "get_terminal_name", lambda _target: "Test Terminal")
     monkeypatch.setattr(tbm, "get_terminal_contents", fake_terminal_contents)
+    _disable_activity_chime(monkeypatch)
 
     manager = tbm.TerminalBroadcastManager(
         speak=False,
@@ -685,6 +704,7 @@ def test_terminal_broadcast_manager_does_not_repeat_same_reply_after_reflow(
 
     monkeypatch.setattr(tbm, "get_terminal_name", lambda _target: "Test Terminal")
     monkeypatch.setattr(tbm, "get_terminal_contents", fake_terminal_contents)
+    _disable_activity_chime(monkeypatch)
 
     manager = tbm.TerminalBroadcastManager(
         speak=False,
@@ -732,6 +752,7 @@ def test_terminal_broadcast_manager_does_not_repeat_same_english_reply_after_ref
 
     monkeypatch.setattr(tbm, "get_terminal_name", lambda _target: "Test Terminal")
     monkeypatch.setattr(tbm, "get_terminal_contents", fake_terminal_contents)
+    _disable_activity_chime(monkeypatch)
 
     manager = tbm.TerminalBroadcastManager(
         speak=False,
@@ -793,6 +814,7 @@ def test_terminal_broadcast_manager_ignores_old_completed_reply_after_new_user_i
 
     monkeypatch.setattr(tbm, "get_terminal_name", lambda _target: "Test Terminal")
     monkeypatch.setattr(tbm, "get_terminal_contents", fake_terminal_contents)
+    _disable_activity_chime(monkeypatch)
 
     manager = tbm.TerminalBroadcastManager(
         speak=False,
@@ -925,6 +947,7 @@ def test_terminal_broadcast_manager_prints_authorization_alert_once_per_prompt(
 
     monkeypatch.setattr(tbm, "get_terminal_name", lambda _target: "Test Terminal")
     monkeypatch.setattr(tbm, "get_terminal_contents", fake_terminal_contents)
+    _disable_activity_chime(monkeypatch)
 
     manager = tbm.TerminalBroadcastManager(
         speak=False,
@@ -977,6 +1000,8 @@ def test_terminal_broadcast_manager_prints_authorization_alert_when_session_boun
             "3. No, and tell Codex what to do differently (esc)",
         ),
     )
+    _disable_activity_chime(monkeypatch)
+    _disable_front_tab_authorization_fallback(monkeypatch, front_target=target)
 
     manager = tbm.TerminalBroadcastManager(
         speak=False,
@@ -1021,6 +1046,7 @@ def test_terminal_broadcast_manager_uses_front_tab_authorization_fallback_when_b
     monkeypatch.setattr(tbm, "get_terminal_name", lambda _target: "Test Terminal")
     monkeypatch.setattr(tbm, "get_front_terminal_target", lambda: front_target)
     monkeypatch.setattr(tbm, "load_terminal_binding", lambda target: target)
+    _disable_activity_chime(monkeypatch)
 
     def fake_terminal_contents(target):
         if target.window_id == 1:
