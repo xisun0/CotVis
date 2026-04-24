@@ -704,6 +704,7 @@ def test_terminal_broadcast_manager_does_not_repeat_same_reply_after_reflow(
 
     monkeypatch.setattr(tbm, "get_terminal_name", lambda _target: "Test Terminal")
     monkeypatch.setattr(tbm, "get_terminal_contents", fake_terminal_contents)
+    _disable_activity_chime(monkeypatch)
 
     manager = tbm.TerminalBroadcastManager(
         speak=False,
