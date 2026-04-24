@@ -947,6 +947,7 @@ def test_terminal_broadcast_manager_prints_authorization_alert_once_per_prompt(
 
     monkeypatch.setattr(tbm, "get_terminal_name", lambda _target: "Test Terminal")
     monkeypatch.setattr(tbm, "get_terminal_contents", fake_terminal_contents)
+    _disable_activity_chime(monkeypatch)
 
     manager = tbm.TerminalBroadcastManager(
         speak=False,
