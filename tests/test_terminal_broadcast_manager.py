@@ -814,6 +814,7 @@ def test_terminal_broadcast_manager_ignores_old_completed_reply_after_new_user_i
 
     monkeypatch.setattr(tbm, "get_terminal_name", lambda _target: "Test Terminal")
     monkeypatch.setattr(tbm, "get_terminal_contents", fake_terminal_contents)
+    _disable_activity_chime(monkeypatch)
 
     manager = tbm.TerminalBroadcastManager(
         speak=False,
