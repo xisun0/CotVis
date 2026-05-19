@@ -636,9 +636,11 @@ class BroadcastEvent:
     timestamp: float
 
 
-ACTIVITY_SOUND = "/System/Library/Sounds/Glass.aiff"
+SPEECH_ACTIVITY_SOUND = "/System/Library/Sounds/Pop.aiff"
+AUTHORIZATION_ALERT_SOUND = "/System/Library/Sounds/Glass.aiff"
 ACTIVITY_INDICATOR_INTERVAL = 1.0  # seconds between activity chimes
 AUTHORIZATION_REMINDER_INTERVAL = 12.0
+AUTHORIZATION_ACTIVE_AFTER_LINES = 3
 
 AUTHORIZATION_HEADLINE_PATTERNS = [
     re.compile(r"do you want to allow this action\??", re.IGNORECASE),
@@ -704,8 +706,8 @@ def detect_authorization_prompt(text: str) -> str:
         for pattern in AUTHORIZATION_COMMAND_PATTERNS
     )
     matched_actions = [
-        line
-        for line in cleaned_lines
+        (index, line)
+        for index, line in enumerate(cleaned_lines)
         if any(pattern.search(line) for pattern in AUTHORIZATION_ACTION_PATTERNS)
     ]
     for index, line in enumerate(cleaned_lines):
@@ -727,20 +729,31 @@ def detect_authorization_prompt(text: str) -> str:
         if matched_pattern is None:
             continue
         window = cleaned_lines[max(0, index - 1) : index + 5]
-        if any(
-            pattern.search(candidate)
-            for candidate in window
-            for pattern in AUTHORIZATION_ACTION_PATTERNS
+        window_start = max(0, index - 1)
+        evidence_indexes = [
+            window_start + offset
+            for offset, candidate in enumerate(window)
+            if any(
+                pattern.search(candidate)
+                for pattern in (
+                    AUTHORIZATION_ACTION_PATTERNS + AUTHORIZATION_COMMAND_PATTERNS
+                )
+            )
+        ]
+        latest_evidence_index = max(evidence_indexes) if evidence_indexes else -1
+        if (
+            latest_evidence_index >= 0
+            and len(cleaned_lines) - latest_evidence_index - 1 <= AUTHORIZATION_ACTIVE_AFTER_LINES
         ):
             for headline_candidate in reversed(headline_candidates):
                 matched_text = matched_pattern.search(headline_candidate)
                 if matched_text is not None:
                     return matched_text.group(0).strip()
-        for headline_candidate in reversed(headline_candidates):
-            matched_text = matched_pattern.search(headline_candidate)
-            if matched_text is not None:
-                return matched_text.group(0).strip()
-    if len(matched_actions) >= 2 and (has_reason or has_command):
+    has_active_action = any(
+        len(cleaned_lines) - index - 1 <= AUTHORIZATION_ACTIVE_AFTER_LINES
+        for index, _line in matched_actions
+    )
+    if len(matched_actions) >= 2 and has_active_action and (has_reason or has_command):
         if has_command:
             return "Would you like to run the following command?"
         return "Authorization request pending."
@@ -838,7 +851,14 @@ class TerminalBroadcastManager:
             return
         self._last_activity_chime_time = now
         subprocess.Popen(
-            ["afplay", ACTIVITY_SOUND],
+            ["afplay", SPEECH_ACTIVITY_SOUND],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+    def _play_authorization_chime(self) -> None:
+        subprocess.Popen(
+            ["afplay", AUTHORIZATION_ALERT_SOUND],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -847,7 +867,7 @@ class TerminalBroadcastManager:
         """Background thread: play a chime every second until stop_event is set."""
         while not stop_event.wait(timeout=ACTIVITY_INDICATOR_INTERVAL):
             subprocess.Popen(
-                ["afplay", ACTIVITY_SOUND],
+                ["afplay", SPEECH_ACTIVITY_SOUND],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
@@ -895,7 +915,7 @@ class TerminalBroadcastManager:
             print(f"[note] authorization source={source_label}")
         print(prompt_text)
 
-        self._play_activity_chime()
+        self._play_authorization_chime()
         if self._speak:
             threading.Thread(
                 target=speak_status_text,

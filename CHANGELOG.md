@@ -3,6 +3,8 @@
 ## codex-speak-v0.2.0
 
 - Changed TTS playback to prefer the newest assistant turn, stopping stale audio and suppressing older speech-generation threads when a newer message is ready.
+- Reduced stale authorization alerts when old approval UI text remains in the terminal session after the request has already been handled.
+- Split the TTS preparation chime and authorization alert chime into distinct sounds.
 
 ## codex-speak-v0.1.1
 

@@ -36,6 +36,7 @@ def _disable_front_tab_authorization_fallback(
 
 def _disable_activity_chime(monkeypatch) -> None:
     monkeypatch.setattr(tbm.TerminalBroadcastManager, "_play_activity_chime", lambda self: None)
+    monkeypatch.setattr(tbm.TerminalBroadcastManager, "_play_authorization_chime", lambda self: None)
 
 
 def test_resolve_terminal_target_session_from_history(tmp_path, monkeypatch) -> None:
@@ -941,7 +942,7 @@ def test_detect_authorization_prompt_from_wrapped_codex_run_command_ui() -> None
     assert prompt == "Would you like to run the following command?"
 
 
-def test_detect_authorization_prompt_from_headline_only_prefix() -> None:
+def test_detect_authorization_prompt_does_not_trigger_on_headline_without_controls() -> None:
     prompt = tbm.detect_authorization_prompt(
         _snapshot(
             "Would you like to run the following",
@@ -949,7 +950,7 @@ def test_detect_authorization_prompt_from_headline_only_prefix() -> None:
         )
     )
 
-    assert prompt == "Would you like to run the following"
+    assert prompt == ""
 
 
 def test_detect_authorization_prompt_from_partial_codex_run_command_ui() -> None:
@@ -971,6 +972,40 @@ def test_detect_authorization_prompt_does_not_trigger_on_normal_reply_text() -> 
         _snapshot(
             "现在还能删的，主要就剩两类。",
             "如果你要，我可以先删第 1 类；按你的要求，删之前我会再向你请求授权。",
+        )
+    )
+
+    assert prompt == ""
+
+
+def test_detect_authorization_prompt_does_not_trigger_on_approval_discussion() -> None:
+    prompt = tbm.detect_authorization_prompt(
+        _snapshot(
+            "This command requires approval before it can run.",
+            "That does not mean Terminal is currently waiting for a decision.",
+            "I will ask before making any file-system change.",
+        )
+    )
+
+    assert prompt == ""
+
+
+def test_detect_authorization_prompt_ignores_stale_prompt_above_new_output() -> None:
+    prompt = tbm.detect_authorization_prompt(
+        _snapshot(
+            "Would you like to run the following command?",
+            "Reason: Do you want to stage the updated files?",
+            "$ git add CHANGELOG.md",
+            "› 1. Yes, proceed (y)",
+            "2. Yes, and don't ask again for commands that start with `git add` (p)",
+            "3. No, and tell Codex what to do differently (esc)",
+            "[command completed]",
+            "M  CHANGELOG.md",
+            "The authorization has already been handled.",
+            "Continuing with the next step.",
+            "No approval UI is currently waiting.",
+            "Done.",
+            "› next user request",
         )
     )
 
