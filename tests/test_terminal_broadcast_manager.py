@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
+import threading
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -431,6 +432,67 @@ def test_rewrite_for_speech_with_model_includes_user_input_context(monkeypatch) 
     assert "读正文第一段" in system_message
     assert "<user_input>\nuser asks for a concise summary\n</user_input>" in user_message
     assert "<chunk>\nassistant reply\n</chunk>" in user_message
+
+
+def test_latest_speech_player_stops_previous_playback(monkeypatch) -> None:
+    started = threading.Event()
+    release_first = threading.Event()
+    processes = []
+
+    class FakeProcess:
+        def __init__(self, args, **kwargs):
+            del kwargs
+            self.args = args
+            self.terminated = False
+            self.killed = False
+            self.done = threading.Event()
+            processes.append(self)
+            if len(processes) == 1:
+                started.set()
+
+        def poll(self):
+            return 0 if self.done.is_set() else None
+
+        def wait(self, timeout=None):
+            if len(processes) == 1 and not self.terminated:
+                release_first.wait(timeout=timeout)
+            if timeout is not None and not self.done.is_set() and not self.terminated:
+                raise tbm.subprocess.TimeoutExpired(self.args, timeout)
+            self.done.set()
+            return 0
+
+        def terminate(self):
+            self.terminated = True
+            self.done.set()
+
+        def kill(self):
+            self.killed = True
+            self.done.set()
+
+    monkeypatch.setattr(tbm.subprocess, "Popen", FakeProcess)
+    player = tbm.LatestSpeechPlayer()
+
+    first_thread = threading.Thread(target=player.play_file, args=("/tmp/old.mp3",))
+    first_thread.start()
+    assert started.wait(timeout=1.0)
+
+    player.play_file("/tmp/new.mp3")
+    release_first.set()
+    first_thread.join(timeout=1.0)
+
+    assert len(processes) == 2
+    assert processes[0].terminated is True
+    assert processes[1].terminated is False
+
+
+def test_terminal_broadcast_manager_marks_only_latest_speech_generation() -> None:
+    manager = tbm.TerminalBroadcastManager(speak=False, print_speak_text=False)
+
+    old_generation = manager._start_latest_speech_generation()
+    latest_generation = manager._start_latest_speech_generation()
+
+    assert manager._is_latest_speech_generation(old_generation) is False
+    assert manager._is_latest_speech_generation(latest_generation) is True
 
 
 def test_rewrite_for_speech_with_model_returns_exact_quoted_text_for_read_aloud() -> None:

@@ -9,6 +9,7 @@ import sys
 import tempfile
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -204,7 +205,53 @@ def contains_cjk(text: str) -> bool:
     return False
 
 
-def speak_text(text: str) -> None:
+class LatestSpeechPlayer:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._current_process: subprocess.Popen | None = None
+
+    def stop_current(self) -> None:
+        with self._lock:
+            self._stop_current_locked()
+
+    def play_file(self, path: str, *, should_play: Callable[[], bool] | None = None) -> None:
+        with self._lock:
+            self._stop_current_locked()
+            if should_play is not None and not should_play():
+                return
+            process = subprocess.Popen(
+                ["afplay", path],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            self._current_process = process
+        try:
+            process.wait()
+        finally:
+            with self._lock:
+                if self._current_process is process:
+                    self._current_process = None
+
+    def _stop_current_locked(self) -> None:
+        process = self._current_process
+        if process is None:
+            return
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=1.0)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+        self._current_process = None
+
+
+def speak_text(
+    text: str,
+    *,
+    player: LatestSpeechPlayer | None = None,
+    should_play: Callable[[], bool] | None = None,
+) -> None:
     cleaned = " ".join(line.strip() for line in text.splitlines() if line.strip())
     if not cleaned:
         return
@@ -222,12 +269,17 @@ def speak_text(text: str) -> None:
             speed=OPENAI_TTS_SPEED,
         ) as response:
             response.stream_to_file(tmp_path)
-        subprocess.run(
-            ["afplay", tmp_path],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
+        if player is None:
+            if should_play is not None and not should_play():
+                return
+            subprocess.run(
+                ["afplay", tmp_path],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        else:
+            player.play_file(tmp_path, should_play=should_play)
     finally:
         if tmp_path and os.path.exists(tmp_path):
             try:
@@ -739,6 +791,9 @@ class TerminalBroadcastManager:
         self._speech_rewrite_model = speech_rewrite_model
         self._openai_client: OpenAI | None = None
         self._openai_client_lock = threading.Lock()
+        self._speech_player = LatestSpeechPlayer()
+        self._speech_generation = 0
+        self._speech_generation_lock = threading.Lock()
         self._last_activity_chime_time = 0.0
         self._last_authorization_prompt = ""
         self._last_authorization_alert_time = 0.0
@@ -1100,7 +1155,19 @@ class TerminalBroadcastManager:
                 self._openai_client = OpenAI()
             return self._openai_client
 
+    def _start_latest_speech_generation(self) -> int:
+        with self._speech_generation_lock:
+            self._speech_generation += 1
+            generation = self._speech_generation
+        self._speech_player.stop_current()
+        return generation
+
+    def _is_latest_speech_generation(self, generation: int) -> bool:
+        with self._speech_generation_lock:
+            return generation == self._speech_generation
+
     def _rewrite_and_speak(self, reply_text: str, user_input: str) -> None:
+        generation = self._start_latest_speech_generation()
         stop_chime = threading.Event()
         if self._speak:
             threading.Thread(
@@ -1123,6 +1190,9 @@ class TerminalBroadcastManager:
         if not spoken:
             return
 
+        if not self._is_latest_speech_generation(generation):
+            return
+
         if self._print_speak_text:
             print("")
             print("[spoken]")
@@ -1130,7 +1200,11 @@ class TerminalBroadcastManager:
 
         if self._speak:
             try:
-                speak_text(spoken)
+                speak_text(
+                    spoken,
+                    player=self._speech_player,
+                    should_play=lambda: self._is_latest_speech_generation(generation),
+                )
             except Exception as exc:
                 print(f"[spoken-error] tts failed: {exc}", file=sys.stderr)
 

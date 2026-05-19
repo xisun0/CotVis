@@ -1,5 +1,9 @@
 # Changelog
 
+## codex-speak-v0.2.0
+
+- Changed TTS playback to prefer the newest assistant turn, stopping stale audio and suppressing older speech-generation threads when a newer message is ready.
+
 ## codex-speak-v0.1.1
 
 - Added `--session-id` for stable tracking of existing Codex sessions.
