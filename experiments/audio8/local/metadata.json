@@ -1,0 +1,11 @@
+{
+  "backend": "audio8",
+  "load_seconds": 1.4068482500006212,
+  "rss_after_load_bytes": 1362264064,
+  "threads": 5,
+  "max_new_tokens": 1024,
+  "seed": 42,
+  "openai_model": "gpt-4o-mini-tts",
+  "openai_voice": "alloy",
+  "openai_speed": 1.2
+}

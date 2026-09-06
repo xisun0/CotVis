@@ -1,0 +1,12 @@
+{"id": 1, "expected": "你好，测试已经完成。", "transcript": "您好,测试已经完成。"}
+{"id": 2, "expected": "代码已修改，相关检查全部通过。下一步可以查看差异。", "transcript": "代码已修改相关检查全部通过 下一步可以查看差异"}
+{"id": 3, "expected": "请在 GitHub 上查看这个 issue，然后运行 Python 脚本。", "transcript": "请在Github上查看这个异书 然后运行Python九本"}
+{"id": 4, "expected": "我们使用固定效应回归，并按照公司层面聚类标准误。", "transcript": "我们使用固定效应回归 并按照公司层面聚类标准物"}
+{"id": 5, "expected": "样本包含三千一百五十七家公司，覆盖二零一零年至二零二三年。", "transcript": "樣本包含3157家公司 覆蓋2010年至2023年"}
+{"id": 6, "expected": "增长率从 3.5% 上升到 12.8%，增加了 9.3 个百分点。", "transcript": "增長率從10%上到12.8%增加了9.3個百分點"}
+{"id": 7, "expected": "预算是 1250.50 美元，截止日期为 2026 年 9 月 6 日。", "transcript": "预算是250-50年 截止日期为2026年9月6日"}
+{"id": 8, "expected": "The tests passed. Please review the changes before merging this branch.", "transcript": "A test passed. Please review the changes before merging this branch."}
+{"id": 9, "expected": "运行 pytest 后，检查 README.md 中的安装步骤是否准确。", "transcript": "运行PayTest后,检查Readme Boombay中的安装步骤是否准确。"}
+{"id": 10, "expected": "结果显示，政策发布后，高相关性公司的累计异常收益更高。但这个结果还不能证明具体的信息传递机制。", "transcript": "结果显示,政策发布后,高相关性公司的累计异常收益更高,但这个结果还不能证明具体的信息传递机制。"}
+{"id": 11, "expected": "我已经完成数据核对。原始面板与回归样本的区别主要来自缺失值和筛选条件。请先确认样本定义，再比较两张表中的系数。", "transcript": "我已经完成数据核对 原始面板与回归样本的区别主要来自缺失值和筛选条件 请先确认样本定义,再比较两张表中的系数"}
+{"id": 12, "expected": "这次修改包含三个部分。首先，统一输入文件的日期格式。其次，保留原始记录并标记缺失值。最后，重新生成描述统计表。检查结果表明，行数保持一致，但仍有两条记录需要人工核对。", "transcript": "这次修改包含三个部分 首先统一输入文件的日期格式 其次保留原始记录并标记缺失值 最后重新生成描述统计表 检查结果表明 形数保持一致 但仍有两条记录需要人工核对"}
